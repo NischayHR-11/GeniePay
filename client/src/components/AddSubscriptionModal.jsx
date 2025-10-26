@@ -16,7 +16,15 @@ export default function AddSubscriptionModal({ isOpen, onClose, onSuccess }) {
     setLoading(true)
 
     try {
-      await addSubscription(serviceName, parseFloat(price), renewalDate)
+      // Add timeout to prevent infinite loading
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Request timeout')), 15000)
+      )
+      
+      await Promise.race([
+        addSubscription(serviceName, parseFloat(price), renewalDate),
+        timeoutPromise
+      ])
       
       // Reset form
       setServiceName('')
@@ -26,7 +34,8 @@ export default function AddSubscriptionModal({ isOpen, onClose, onSuccess }) {
       onSuccess()
       onClose()
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to add subscription')
+      console.error('Add subscription error:', err)
+      setError(err.response?.data?.error || err.message || 'Failed to add subscription')
     } finally {
       setLoading(false)
     }

@@ -454,12 +454,16 @@ app.post('/subscriptions/add',
 
       await subscription.save();
 
-      // Get user details
-      const user = await User.findById(req.user.id);
+      // Send response immediately
+      res.status(201).json({
+        message: 'Subscription added successfully',
+        subscription
+      });
 
-      // Send confirmation email
+      // Send confirmation email asynchronously (non-blocking)
+      const user = await User.findById(req.user.id);
       if (transporter && user) {
-        await sendEmail(
+        sendEmail(
           user.email,
           `✅ ${serviceName} Subscription Added`,
           `<h2>Subscription Added Successfully</h2>
@@ -467,13 +471,8 @@ app.post('/subscriptions/add',
            <p><strong>Price:</strong> ₹${price}</p>
            <p><strong>Next Renewal:</strong> ${new Date(renewalDate).toLocaleDateString()}</p>
            <p>Your payment will be automated via blockchain!</p>`
-        );
+        ).catch(err => console.error('Email send error:', err));
       }
-
-      res.status(201).json({
-        message: 'Subscription added successfully',
-        subscription
-      });
     } catch (error) {
       console.error('Add subscription error:', error);
       res.status(500).json({ error: 'Server error adding subscription' });
@@ -496,21 +495,20 @@ app.delete('/subscriptions/:id', authenticateToken, async (req, res) => {
     const serviceName = subscription.serviceName;
     await Subscription.deleteOne({ _id: req.params.id });
 
-    // Get user details
-    const user = await User.findById(req.user.id);
+    // Send response immediately
+    res.json({ message: 'Subscription deleted successfully' });
 
-    // Send cancellation email
+    // Send cancellation email asynchronously (non-blocking)
+    const user = await User.findById(req.user.id);
     if (transporter && user) {
-      await sendEmail(
+      sendEmail(
         user.email,
         `🚫 ${serviceName} Subscription Cancelled`,
         `<h2>Subscription Cancelled</h2>
          <p>Your <strong>${serviceName}</strong> subscription has been cancelled successfully.</p>
          <p>You will not be charged in the future.</p>`
-      );
+      ).catch(err => console.error('Email send error:', err));
     }
-
-    res.json({ message: 'Subscription deleted successfully' });
   } catch (error) {
     console.error('Delete subscription error:', error);
     res.status(500).json({ error: 'Server error deleting subscription' });
