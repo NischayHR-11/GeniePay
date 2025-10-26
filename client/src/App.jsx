@@ -6,7 +6,17 @@ import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
 
 function ProtectedRoute({ children }) {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, loading } = useAuth()
+  
+  // Show nothing while checking authentication
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-950">
+        <div className="loading-spinner"></div>
+      </div>
+    )
+  }
+  
   return isAuthenticated ? children : <Navigate to="/login" />
 }
 
