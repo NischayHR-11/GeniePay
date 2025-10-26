@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Zap, Plus, Trash2, Pause, Play, LogOut, Wallet, 
-  MessageSquare, Send, TrendingUp, DollarSign, Calendar 
+  Bot, Send, TrendingUp, DollarSign, Calendar 
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
@@ -138,7 +138,7 @@ export default function Dashboard() {
                   : 'border border-thor-red hover:bg-thor-red/10'
               }`}
             >
-              <MessageSquare className="w-4 h-4" />
+              <Bot className="w-4 h-4" />
               <span className="hidden sm:inline text-sm">AI Assistant</span>
             </button>
 
