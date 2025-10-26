@@ -1,0 +1,115 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-thor-darker text-white;
+    font-family: 'Orbitron', sans-serif;
+  }
+}
+
+@layer components {
+  .thor-button {
+    @apply px-6 py-3 rounded-lg font-bold text-white bg-gradient-to-r from-thor-red to-thor-blue hover:scale-105 transform transition-all duration-300 shadow-lg hover:shadow-2xl;
+  }
+  
+  .thor-card {
+    @apply bg-gradient-to-br from-thor-dark to-thor-darker border border-thor-blue/30 rounded-xl p-6 shadow-2xl hover:border-thor-red/50 transition-all duration-300;
+  }
+  
+  .glow-text {
+    text-shadow: 0 0 10px rgba(255, 0, 68, 0.8),
+                 0 0 20px rgba(0, 217, 255, 0.6),
+                 0 0 30px rgba(255, 0, 68, 0.4);
+  }
+  
+  .neon-border {
+    box-shadow: 0 0 10px rgba(255, 0, 68, 0.5),
+                0 0 20px rgba(0, 217, 255, 0.3),
+                inset 0 0 10px rgba(255, 0, 68, 0.2);
+  }
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0A0E27;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #FF0044 0%, #00D9FF 100%);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #00D9FF 0%, #FF0044 100%);
+}
+
+/* Loading Animation */
+.loading-spinner {
+  border: 3px solid rgba(255, 0, 68, 0.3);
+  border-top: 3px solid #FF0044;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Particle Effect */
+.particle {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: float-particle 3s ease-in-out infinite;
+}
+
+@keyframes float-particle {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0;
+  }
+  50% {
+    transform: translate(var(--tx), var(--ty)) scale(1.5);
+    opacity: 1;
+  }
+}
+
+/* Lightning Effect */
+.lightning-bolt {
+  position: fixed;
+  width: 2px;
+  height: 100vh;
+  background: linear-gradient(180deg, transparent, #00D9FF, transparent);
+  opacity: 0;
+  animation: lightning-strike 2s ease-in-out infinite;
+}
+
+@keyframes lightning-strike {
+  0%, 90%, 100% {
+    opacity: 0;
+  }
+  91%, 93%, 95% {
+    opacity: 1;
+  }
+  92%, 94% {
+    opacity: 0;
+  }
+}
+
+/* Input Styling */
+input, textarea, select {
+  @apply bg-thor-dark border border-thor-blue/30 rounded-lg px-4 py-2 text-white focus:border-thor-red focus:outline-none focus:ring-2 focus:ring-thor-red/50 transition-all;
+}
+
+input::placeholder, textarea::placeholder {
+  @apply text-gray-500;
+}
