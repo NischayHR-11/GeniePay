@@ -31,6 +31,7 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
   'https://geniepay.nischay.tech',
+  'https://genie-pay.vercel.app',
   process.env.CLIENT_URL
 ].filter(Boolean);
 
