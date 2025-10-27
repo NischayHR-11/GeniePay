@@ -4,7 +4,6 @@
 
 ## ⚡ Features
 
-- 🎨 **THOR Theme UI** - Flashy neon gradients with 3D lightning effects
 - 🤖 **AI Assistant** - Natural language commands for subscription management
 - ⛓️ **Blockchain Integration** - Smart contract automation for payments
 - 🔐 **Secure Authentication** - JWT-based auth with encrypted passwords
