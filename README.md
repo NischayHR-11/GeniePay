@@ -155,7 +155,7 @@ GeniePay/
 - Input validation
 - Environment variable protection
 
-## 🎨 THOR Theme
+## 🎨 UI Theme
 
 The UI features:
 - Dark mode with neon gradients (red + blue)
@@ -246,7 +246,3 @@ MIT License - feel free to use this project for learning or commercial purposes.
 For issues and questions:
 - Create an issue on GitHub
 - Email: support@geniepay.com
-
----
-
-**Built with ⚡ by THOR Energy**
