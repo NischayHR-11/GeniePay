@@ -3,8 +3,11 @@ import { Link } from 'react-router-dom'
 import { Zap, Brain, Shield, Wallet, TrendingUp, Clock } from 'lucide-react'
 import SimpleBackground from '../components/SimpleBackground'
 import Navbar from '../components/Navbar'
+import { useAuth } from '../context/AuthContext'
 
 export default function Home() {
+  const { isAuthenticated } = useAuth()
+  
   const features = [
     {
       icon: <Brain className="w-12 h-12" />,
@@ -80,9 +83,15 @@ export default function Home() {
               transition={{ delay: 0.5 }}
               className="flex gap-4 justify-center flex-wrap"
             >
-              <Link to="/signup" className="thor-button text-lg px-8 py-4">
-                Get Started Free
-              </Link>
+              {isAuthenticated ? (
+                <Link to="/dashboard" className="thor-button text-lg px-8 py-4">
+                  Go to Dashboard
+                </Link>
+              ) : (
+                <Link to="/signup" className="thor-button text-lg px-8 py-4">
+                  Get Started Free
+                </Link>
+              )}
               <a 
                 href="#features" 
                 className="px-8 py-4 rounded-lg font-bold text-white border-2 border-thor-blue hover:bg-thor-blue/20 transition-all duration-300"

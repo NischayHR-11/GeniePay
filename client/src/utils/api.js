@@ -59,8 +59,11 @@ export const pauseSubscription = async (id) => {
 }
 
 // AI APIs
-export const sendAICommand = async (command) => {
-  const response = await api.post('/ai/command', { command })
+export const sendAICommand = async (command, conversationHistory = []) => {
+  const response = await api.post('/ai/command', { 
+    command,
+    conversationHistory 
+  })
   return response.data
 }
 

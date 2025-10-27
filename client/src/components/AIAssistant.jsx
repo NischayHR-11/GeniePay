@@ -7,7 +7,7 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: 'Hi! I\'m your AI assistant. I can help you manage your subscriptions. Try commands like "Pause Netflix", "Show my spending", or "Add Prime Video for ₹299".',
+      content: 'Hi! I\'m your AI assistant. I can help you manage your subscriptions directly. Try:\n• "Resume Amazon" to reactivate\n• "Pause Netflix" to pause\n• "Add Disney for 299"\n• "Show my spending"',
       timestamp: new Date()
     }
   ])
@@ -38,7 +38,19 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
     setLoading(true)
 
     try {
-      const response = await sendAICommand(input)
+      // Get last 5 messages for context (excluding the welcome message)
+      const recentMessages = messages
+        .slice(-5)
+        .filter(msg => msg.role === 'user' || msg.role === 'assistant')
+        .map(msg => ({
+          role: msg.role,
+          content: msg.content
+        }))
+      
+      // Add current message
+      recentMessages.push({ role: 'user', content: input })
+      
+      const response = await sendAICommand(input, recentMessages)
       
       const aiMessage = {
         role: 'assistant',
@@ -50,7 +62,7 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
       setMessages(prev => [...prev, aiMessage])
 
       // Refresh subscriptions if action was performed
-      if (['add', 'delete', 'pause', 'resume'].includes(response.action)) {
+      if (['add', 'delete', 'pause', 'resume', 'list', 'analytics'].includes(response.action)) {
         onUpdate()
       }
     } catch (error) {
@@ -102,7 +114,7 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 space-y-4">
               {messages.map((message, index) => (
                 <motion.div
                   key={index}
@@ -128,23 +140,68 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
                   </div>
 
                   {/* Message */}
-                  <div className={`flex-1 ${
+                  <div className={`flex-1 min-w-0 ${
                     message.role === 'user' ? 'text-right' : 'text-left'
                   }`}>
-                    <div className={`inline-block px-4 py-2 rounded-lg ${
-                      message.role === 'user'
-                        ? 'bg-thor-blue/20 text-white'
-                        : message.isError
-                        ? 'bg-thor-red/20 text-thor-red'
-                        : 'bg-thor-dark text-gray-200'
-                    }`}>
-                      {message.content}
-                    </div>
+                    {/* Only show text if not a list action, or if it's a list action with no subscriptions */}
+                    {!(message.data?.action === 'list' && message.data?.subscriptions?.length > 0) && (
+                      <div className={`inline-block px-4 py-2 rounded-lg max-w-full ${
+                        message.role === 'user'
+                          ? 'bg-thor-blue/20 text-white'
+                          : message.isError
+                          ? 'bg-thor-red/20 text-thor-red'
+                          : 'bg-thor-dark text-gray-200'
+                      }`}>
+                        <div className="break-words">{message.content}</div>
+                      </div>
+                    )}
                     
-                    {/* Display data if available */}
-                    {message.data?.subscriptions && (
-                      <div className="mt-2 text-sm text-gray-400">
-                        <p>Total: ₹{message.data.totalSpending}/month</p>
+                    {/* Display subscriptions in table format if available */}
+                    {message.data?.subscriptions && message.data.subscriptions.length > 0 && (
+                      <div className="mt-3 bg-thor-dark/50 rounded-lg overflow-hidden text-left">
+                        {/* Table for multiple subscriptions - scrollable independently without scrollbar */}
+                        <div className="overflow-x-auto overflow-y-visible p-3 scrollbar-hide">
+                          <table className="w-full text-sm min-w-[500px]">
+                            <thead>
+                              <tr className="border-b border-thor-blue/30">
+                                <th className="text-left py-2 px-2 text-thor-blue whitespace-nowrap">Service</th>
+                                <th className="text-left py-2 px-2 text-thor-blue whitespace-nowrap">Price</th>
+                                <th className="text-left py-2 px-2 text-thor-blue whitespace-nowrap">Status</th>
+                                <th className="text-left py-2 px-2 text-thor-blue whitespace-nowrap">Renewal</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {message.data.subscriptions.map((sub, idx) => (
+                                <tr key={idx} className="border-b border-gray-700/50 hover:bg-thor-blue/5">
+                                  <td className="py-2 px-2 font-medium whitespace-nowrap">{sub.serviceName}</td>
+                                  <td className="py-2 px-2 whitespace-nowrap">₹{sub.price}</td>
+                                  <td className="py-2 px-2 whitespace-nowrap">
+                                    <span className={`px-2 py-1 rounded text-xs ${
+                                      sub.status === 'active' 
+                                        ? 'bg-green-500/20 text-green-400' 
+                                        : sub.status === 'paused'
+                                        ? 'bg-yellow-500/20 text-yellow-400'
+                                        : 'bg-red-500/20 text-red-400'
+                                    }`}>
+                                      {sub.status}
+                                    </span>
+                                  </td>
+                                  <td className="py-2 px-2 text-gray-400 whitespace-nowrap">
+                                    {new Date(sub.renewalDate).toLocaleDateString()}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        
+                        {/* Total spending */}
+                        {message.data.totalSpending !== undefined && (
+                          <div className="mt-3 pt-3 border-t border-thor-blue/30 flex justify-between items-center">
+                            <span className="text-gray-400">Total Monthly Spending:</span>
+                            <span className="text-lg font-bold text-thor-red">₹{message.data.totalSpending}</span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

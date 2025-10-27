@@ -491,7 +491,7 @@ app.patch('/subscriptions/:id/pause', authenticateToken, async (req, res) => {
 // POST /ai/command - Process AI commands
 app.post('/ai/command', authenticateToken, async (req, res) => {
   try {
-    const { command } = req.body;
+    const { command, conversationHistory = [] } = req.body;
 
     if (!command) {
       return res.status(400).json({ error: 'Command is required' });
@@ -507,25 +507,51 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
       `${sub.serviceName} - ₹${sub.price} - Status: ${sub.status}`
     ).join(', ');
 
+    // Build conversation context
+    let conversationContext = '';
+    if (conversationHistory.length > 0) {
+      conversationContext = '\n\nRecent conversation:\n' + 
+        conversationHistory.slice(-4).map(msg => 
+          `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
+        ).join('\n');
+    }
+
     // Create AI prompt for Gemini
     const prompt = `You are an AI assistant for GeniePay, a subscription management system.
     User's current subscriptions: ${subscriptionList || 'None'}
+    ${conversationContext}
     
     Analyze the user's command and return ONLY a JSON response (no markdown, no extra text) with this exact format:
     {
-      "action": "add" | "delete" | "pause" | "resume" | "list" | "info",
+      "action": "add" | "delete" | "pause" | "resume" | "list" | "analytics" | "info",
       "serviceName": "service name if applicable",
       "price": "price if adding subscription (only for add action)",
-      "response": "friendly response to user"
+      "filter": "active" | "paused" | "all" (only for list action),
+      "analyticsType": "top" | "highest" | "lowest" | "cheapest" | "most-expensive" | "total" (only for analytics action),
+      "limit": number (for top/highest/lowest queries, e.g., 3 for "top 3"),
+      "response": "friendly response confirming the action was completed"
     }
     
-    Important action rules:
-    - "add": Create new subscription (requires serviceName and price)
-    - "delete"/"remove"/"cancel": Delete subscription (requires serviceName)
-    - "pause"/"stop"/"hold": Pause subscription (requires serviceName)
-    - "resume"/"restart"/"activate"/"continue"/"unpause": Resume paused subscription (requires serviceName)
-    - "list"/"show"/"display": List all subscriptions
-    - "info": General information or help
+    IMPORTANT CONTEXT RULES:
+    1. If user refers to a subscription mentioned in recent conversation (like "spotify also", "that one", "it"), use that subscription name
+    2. If user says something like "also", "too", "same for X", apply the same action to the mentioned subscription
+    3. Execute actions IMMEDIATELY - do NOT ask for confirmation
+    4. For "list" action, DO NOT generate your own response - leave it empty or say "Listing subscriptions" (backend will format it)
+    5. Response should confirm action was COMPLETED (e.g., "I've resumed your Spotify subscription")
+    6. For list action, set filter based on user's request:
+       - "paused subscriptions" → filter: "paused"
+       - "active subscriptions" → filter: "active"
+       - "all subscriptions" or just "subscriptions" → filter: "all"
+    7. For analytical queries (top X, highest, most expensive, cheapest, etc.), use action: "analytics"
+    
+    Action keywords:
+    - "add"/"create"/"new" → action: "add" (requires serviceName and price)
+    - "delete"/"remove"/"cancel" → action: "delete" (requires serviceName)
+    - "pause"/"stop"/"hold" → action: "pause" (requires serviceName)
+    - "resume"/"restart"/"activate"/"continue"/"unpause"/"reactivate" → action: "resume" (requires serviceName)
+    - "list"/"show"/"display"/"what do i have"/"my subscriptions" → action: "list" (add filter based on context)
+    - "top X"/"highest"/"most expensive"/"cheapest"/"lowest"/"total spending"/"how much" → action: "analytics"
+    - Other questions → action: "info"
     
     User command: ${command}`;
 
@@ -611,12 +637,83 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
       }
       
     } else if (parsedResponse.action === 'list') {
-      const totalSpending = subscriptions
+      // Get filter from AI response (default to 'all' if not specified)
+      const filter = parsedResponse.filter || 'all';
+      
+      let filteredSubscriptions;
+      if (filter === 'paused') {
+        filteredSubscriptions = subscriptions.filter(sub => sub.status === 'paused');
+      } else if (filter === 'active') {
+        filteredSubscriptions = subscriptions.filter(sub => sub.status === 'active');
+      } else {
+        filteredSubscriptions = subscriptions;
+      }
+      
+      const activeSubscriptions = subscriptions.filter(sub => sub.status === 'active');
+      const totalSpending = activeSubscriptions.reduce((sum, sub) => sum + sub.price, 0);
+      
+      // Format subscription list based on filter
+      let listText = '';
+      if (filteredSubscriptions.length === 0) {
+        if (filter === 'paused') {
+          listText = "You don't have any paused subscriptions.";
+        } else if (filter === 'active') {
+          listText = "You don't have any active subscriptions.";
+        } else {
+          listText = "You don't have any subscriptions yet.";
+        }
+      } else {
+        // Just listing the filtered subscriptions - will be displayed as table
+        listText = ''; // Frontend will handle the display
+      }
+      
+      parsedResponse.subscriptions = filteredSubscriptions;
+      parsedResponse.totalSpending = totalSpending;
+      parsedResponse.response = listText;
+      
+    } else if (parsedResponse.action === 'analytics') {
+      // Handle analytical queries
+      const analyticsType = parsedResponse.analyticsType;
+      const limit = parsedResponse.limit || 5;
+      
+      let resultSubscriptions = [...subscriptions];
+      let responseText = '';
+      
+      if (analyticsType === 'top' || analyticsType === 'highest' || analyticsType === 'most-expensive') {
+        // Sort by price descending and get top N
+        resultSubscriptions = subscriptions
+          .sort((a, b) => b.price - a.price)
+          .slice(0, limit);
+        responseText = `Here are your top ${limit} most expensive subscriptions:`;
+        
+      } else if (analyticsType === 'lowest' || analyticsType === 'cheapest') {
+        // Sort by price ascending and get bottom N
+        resultSubscriptions = subscriptions
+          .sort((a, b) => a.price - b.price)
+          .slice(0, limit);
+        responseText = `Here are your ${limit} cheapest subscriptions:`;
+        
+      } else if (analyticsType === 'total') {
+        // Calculate total spending
+        const activeSubscriptions = subscriptions.filter(sub => sub.status === 'active');
+        const totalSpending = activeSubscriptions.reduce((sum, sub) => sum + sub.price, 0);
+        const pausedCount = subscriptions.filter(sub => sub.status === 'paused').length;
+        
+        responseText = `💰 **Total Monthly Spending:** ₹${totalSpending}\n\n` +
+                      `📊 **Active Subscriptions:** ${activeSubscriptions.length}\n` +
+                      `⏸️ **Paused Subscriptions:** ${pausedCount}\n` +
+                      `📦 **Total Subscriptions:** ${subscriptions.length}`;
+        
+        parsedResponse.totalSpending = totalSpending;
+        parsedResponse.response = responseText;
+        return res.json(parsedResponse);
+      }
+      
+      parsedResponse.subscriptions = resultSubscriptions;
+      parsedResponse.totalSpending = subscriptions
         .filter(sub => sub.status === 'active')
         .reduce((sum, sub) => sum + sub.price, 0);
-      
-      parsedResponse.subscriptions = subscriptions;
-      parsedResponse.totalSpending = totalSpending;
+      parsedResponse.response = responseText;
     }
 
     res.json(parsedResponse);
