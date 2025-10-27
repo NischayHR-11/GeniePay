@@ -515,9 +515,17 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
     {
       "action": "add" | "delete" | "pause" | "resume" | "list" | "info",
       "serviceName": "service name if applicable",
-      "price": "price if adding subscription",
+      "price": "price if adding subscription (only for add action)",
       "response": "friendly response to user"
     }
+    
+    Important action rules:
+    - "add": Create new subscription (requires serviceName and price)
+    - "delete"/"remove"/"cancel": Delete subscription (requires serviceName)
+    - "pause"/"stop"/"hold": Pause subscription (requires serviceName)
+    - "resume"/"restart"/"activate"/"continue"/"unpause": Resume paused subscription (requires serviceName)
+    - "list"/"show"/"display": List all subscriptions
+    - "info": General information or help
     
     User command: ${command}`;
 
@@ -546,7 +554,34 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
     }
 
     // Execute action based on AI response
-    if (parsedResponse.action === 'pause' && parsedResponse.serviceName) {
+    if (parsedResponse.action === 'add' && parsedResponse.serviceName && parsedResponse.price) {
+      // Add new subscription
+      const newSubscription = new Subscription({
+        userId: req.user.id,
+        serviceName: parsedResponse.serviceName,
+        price: parseFloat(parsedResponse.price),
+        renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+        status: 'active'
+      });
+      await newSubscription.save();
+      parsedResponse.subscriptionId = newSubscription._id;
+      
+    } else if (parsedResponse.action === 'delete' && parsedResponse.serviceName) {
+      // Delete subscription
+      const subscription = await Subscription.findOne({
+        userId: req.user.id,
+        serviceName: new RegExp(parsedResponse.serviceName, 'i')
+      });
+
+      if (subscription) {
+        await Subscription.deleteOne({ _id: subscription._id });
+        parsedResponse.deleted = true;
+      } else {
+        parsedResponse.response = `I couldn't find a subscription named "${parsedResponse.serviceName}".`;
+      }
+      
+    } else if (parsedResponse.action === 'pause' && parsedResponse.serviceName) {
+      // Pause subscription
       const subscription = await Subscription.findOne({
         userId: req.user.id,
         serviceName: new RegExp(parsedResponse.serviceName, 'i')
@@ -555,7 +590,26 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
       if (subscription) {
         subscription.status = 'paused';
         await subscription.save();
+        parsedResponse.updated = true;
+      } else {
+        parsedResponse.response = `I couldn't find a subscription named "${parsedResponse.serviceName}".`;
       }
+      
+    } else if (parsedResponse.action === 'resume' && parsedResponse.serviceName) {
+      // Resume subscription
+      const subscription = await Subscription.findOne({
+        userId: req.user.id,
+        serviceName: new RegExp(parsedResponse.serviceName, 'i')
+      });
+
+      if (subscription) {
+        subscription.status = 'active';
+        await subscription.save();
+        parsedResponse.updated = true;
+      } else {
+        parsedResponse.response = `I couldn't find a subscription named "${parsedResponse.serviceName}".`;
+      }
+      
     } else if (parsedResponse.action === 'list') {
       const totalSpending = subscriptions
         .filter(sub => sub.status === 'active')
