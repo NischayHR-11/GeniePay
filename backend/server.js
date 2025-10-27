@@ -528,7 +528,7 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
       "price": "price if adding subscription (only for add action)",
       "filter": "active" | "paused" | "all" (for list action or bulk operations)",
       "analyticsType": "top" | "highest" | "lowest" | "cheapest" | "most-expensive" | "total" (only for analytics action),
-      "limit": number (for top/highest/lowest queries, e.g., 3 for "top 3"),
+      "limit": number (for top/highest/lowest queries - IMPORTANT: use 1 for singular words like "the highest", "the cheapest", "least price"),
       "bulkAction": "pause" | "resume" | "delete" (only for bulk action - what to do with multiple subscriptions),
       "response": "friendly response confirming the action was completed"
     }
@@ -537,20 +537,22 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
     1. If user refers to a subscription mentioned in recent conversation (like "spotify also", "that one", "it"), use that subscription name
     2. If user says something like "also", "too", "same for X", apply the same action to the mentioned subscription
     3. Execute actions IMMEDIATELY - do NOT ask for confirmation
-    4. For "list" action, DO NOT generate your own response - leave it empty or say "Listing subscriptions" (backend will format it)
-    5. Response should confirm action was COMPLETED (e.g., "I've resumed your Spotify subscription")
+    4. For "list" action, DO NOT generate your own response - leave it empty (backend will format it)
+    5. Response should confirm action was COMPLETED with specific details
     6. For list action, set filter based on user's request:
        - "paused subscriptions" → filter: "paused"
        - "active subscriptions" → filter: "active"
        - "all subscriptions" or just "subscriptions" → filter: "all"
-    7. For analytical queries (top X, highest, most expensive, cheapest, etc.), use action: "analytics"
-    8. For bulk operations on multiple subscriptions, use action: "bulk":
+    7. For analytical queries, use action: "analytics" and set proper limit:
+       - "THE highest" / "THE cheapest" / "least price" → limit: 1 (singular)
+       - "top 3" / "5 cheapest" → limit: 3 or 5 (plural with number)
+       - No number specified + plural → limit: 5 (default)
+    8. For "resume/pause/delete THE cheapest/highest/least" → This is ANALYTICS with action to perform after:
+       - "resume the least price in paused" → action: "analytics", filter: "paused", analyticsType: "cheapest", limit: 1, bulkAction: "resume"
+    9. For bulk operations on ALL subscriptions:
        - "resume all paused" → action: "bulk", bulkAction: "resume", filter: "paused"
        - "pause all active" → action: "bulk", bulkAction: "pause", filter: "active"
-       - "delete all paused" → action: "bulk", bulkAction: "delete", filter: "paused"
        - "pause netflix and spotify" → action: "bulk", bulkAction: "pause", serviceName: "netflix,spotify"
-    9. For analytics on filtered subscriptions:
-       - "highest among paused" → action: "analytics", filter: "paused", analyticsType: "highest"
     
     Action keywords:
     - "add"/"create"/"new" → action: "add" (requires serviceName and price)
@@ -729,6 +731,41 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
         return res.json(parsedResponse);
       }
       
+      // If bulkAction is specified, perform action on the result subscriptions
+      if (parsedResponse.bulkAction && resultSubscriptions.length > 0) {
+        const bulkAction = parsedResponse.bulkAction;
+        let updatedCount = 0;
+        
+        if (bulkAction === 'pause') {
+          for (const sub of resultSubscriptions) {
+            if (sub.status !== 'paused') {
+              await Subscription.findByIdAndUpdate(sub._id, { status: 'paused' });
+              updatedCount++;
+            }
+          }
+          parsedResponse.response = `I've paused ${resultSubscriptions.map(s => s.serviceName).join(', ')} (₹${resultSubscriptions[0].price}).`;
+          
+        } else if (bulkAction === 'resume') {
+          for (const sub of resultSubscriptions) {
+            if (sub.status === 'paused') {
+              await Subscription.findByIdAndUpdate(sub._id, { status: 'active' });
+              updatedCount++;
+            }
+          }
+          parsedResponse.response = `I've resumed ${resultSubscriptions.map(s => s.serviceName).join(', ')} (₹${resultSubscriptions[0].price}).`;
+          
+        } else if (bulkAction === 'delete') {
+          for (const sub of resultSubscriptions) {
+            await Subscription.deleteOne({ _id: sub._id });
+            updatedCount++;
+          }
+          parsedResponse.response = `I've deleted ${resultSubscriptions.map(s => s.serviceName).join(', ')}.`;
+        }
+        
+        parsedResponse.updated = updatedCount;
+        return res.json(parsedResponse);
+      }
+      
       parsedResponse.subscriptions = resultSubscriptions;
       parsedResponse.totalSpending = subscriptions
         .filter(sub => sub.status === 'active')
@@ -758,6 +795,7 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
       
       let updatedCount = 0;
       let deletedCount = 0;
+      let affectedNames = [];
       
       if (bulkAction === 'pause') {
         // Pause multiple subscriptions
@@ -765,9 +803,14 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
           if (sub.status !== 'paused') {
             await Subscription.findByIdAndUpdate(sub._id, { status: 'paused' });
             updatedCount++;
+            affectedNames.push(sub.serviceName);
           }
         }
-        parsedResponse.response = `I've paused ${updatedCount} subscription${updatedCount !== 1 ? 's' : ''}.`;
+        if (updatedCount > 0) {
+          parsedResponse.response = `I've paused ${updatedCount} subscription${updatedCount !== 1 ? 's' : ''}: ${affectedNames.join(', ')}.`;
+        } else {
+          parsedResponse.response = "All matching subscriptions are already paused.";
+        }
         
       } else if (bulkAction === 'resume') {
         // Resume multiple subscriptions
@@ -775,17 +818,26 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
           if (sub.status === 'paused') {
             await Subscription.findByIdAndUpdate(sub._id, { status: 'active' });
             updatedCount++;
+            affectedNames.push(sub.serviceName);
           }
         }
-        parsedResponse.response = `I've resumed ${updatedCount} subscription${updatedCount !== 1 ? 's' : ''}.`;
-        
+        if (updatedCount > 0) {
+          parsedResponse.response = `I've resumed ${updatedCount} subscription${updatedCount !== 1 ? 's' : ''}: ${affectedNames.join(', ')}.`;
+        } else {
+          parsedResponse.response = "No paused subscriptions found to resume.";
+        }        
       } else if (bulkAction === 'delete') {
         // Delete multiple subscriptions
         for (const sub of targetSubscriptions) {
           await Subscription.deleteOne({ _id: sub._id });
           deletedCount++;
+          affectedNames.push(sub.serviceName);
         }
-        parsedResponse.response = `I've deleted ${deletedCount} subscription${deletedCount !== 1 ? 's' : ''}.`;
+        if (deletedCount > 0) {
+          parsedResponse.response = `I've deleted ${deletedCount} subscription${deletedCount !== 1 ? 's' : ''}: ${affectedNames.join(', ')}.`;
+        } else {
+          parsedResponse.response = "No subscriptions found to delete.";
+        }
       }
       
       parsedResponse.updated = updatedCount;
