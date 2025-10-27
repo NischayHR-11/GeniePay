@@ -63,75 +63,10 @@ mongoose.connect(process.env.MONGO_URI, {
   .catch((err) => console.error('❌ MongoDB Connection Error:', err));
 
 // ========================================
-// MongoDB Schemas & Models
+// MongoDB Models
 // ========================================
-
-// User Schema
-const userSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  email: {
-    type: String,
-    required: true,
-    unique: true,
-    lowercase: true,
-    trim: true
-  },
-  password: {
-    type: String,
-    required: true
-  },
-  walletAddress: {
-    type: String,
-    default: null
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
-});
-
-const User = mongoose.model('User', userSchema);
-
-// Subscription Schema
-const subscriptionSchema = new mongoose.Schema({
-  userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  serviceName: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  price: {
-    type: Number,
-    required: true
-  },
-  renewalDate: {
-    type: Date,
-    required: true
-  },
-  blockchainTxnHash: {
-    type: String,
-    default: null
-  },
-  status: {
-    type: String,
-    enum: ['active', 'paused', 'cancelled'],
-    default: 'active'
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
-});
-
-const Subscription = mongoose.model('Subscription', subscriptionSchema);
+const User = require('./models/User');
+const Subscription = require('./models/Subscription');
 
 // ========================================
 // Web3 Initialization
