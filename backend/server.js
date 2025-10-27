@@ -523,12 +523,13 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
     
     Analyze the user's command and return ONLY a JSON response (no markdown, no extra text) with this exact format:
     {
-      "action": "add" | "delete" | "pause" | "resume" | "list" | "analytics" | "info",
-      "serviceName": "service name if applicable",
+      "action": "add" | "delete" | "pause" | "resume" | "list" | "analytics" | "bulk" | "info",
+      "serviceName": "service name if applicable (for single operations)",
       "price": "price if adding subscription (only for add action)",
-      "filter": "active" | "paused" | "all" (only for list action),
+      "filter": "active" | "paused" | "all" (for list action or bulk operations)",
       "analyticsType": "top" | "highest" | "lowest" | "cheapest" | "most-expensive" | "total" (only for analytics action),
       "limit": number (for top/highest/lowest queries, e.g., 3 for "top 3"),
+      "bulkAction": "pause" | "resume" | "delete" (only for bulk action - what to do with multiple subscriptions),
       "response": "friendly response confirming the action was completed"
     }
     
@@ -543,14 +544,22 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
        - "active subscriptions" → filter: "active"
        - "all subscriptions" or just "subscriptions" → filter: "all"
     7. For analytical queries (top X, highest, most expensive, cheapest, etc.), use action: "analytics"
+    8. For bulk operations on multiple subscriptions, use action: "bulk":
+       - "resume all paused" → action: "bulk", bulkAction: "resume", filter: "paused"
+       - "pause all active" → action: "bulk", bulkAction: "pause", filter: "active"
+       - "delete all paused" → action: "bulk", bulkAction: "delete", filter: "paused"
+       - "pause netflix and spotify" → action: "bulk", bulkAction: "pause", serviceName: "netflix,spotify"
+    9. For analytics on filtered subscriptions:
+       - "highest among paused" → action: "analytics", filter: "paused", analyticsType: "highest"
     
     Action keywords:
     - "add"/"create"/"new" → action: "add" (requires serviceName and price)
-    - "delete"/"remove"/"cancel" → action: "delete" (requires serviceName)
-    - "pause"/"stop"/"hold" → action: "pause" (requires serviceName)
-    - "resume"/"restart"/"activate"/"continue"/"unpause"/"reactivate" → action: "resume" (requires serviceName)
-    - "list"/"show"/"display"/"what do i have"/"my subscriptions" → action: "list" (add filter based on context)
+    - "delete"/"remove"/"cancel" → action: "delete" (single) or "bulk" (multiple)
+    - "pause"/"stop"/"hold" → action: "pause" (single) or "bulk" (multiple)
+    - "resume"/"restart"/"activate"/"continue"/"unpause"/"reactivate" → action: "resume" (single) or "bulk" (multiple)
+    - "list"/"show"/"display"/"what do i have"/"my subscriptions" → action: "list"
     - "top X"/"highest"/"most expensive"/"cheapest"/"lowest"/"total spending"/"how much" → action: "analytics"
+    - "all paused"/"all active"/"these subscriptions" → action: "bulk" (if followed by an action)
     - Other questions → action: "info"
     
     User command: ${command}`;
@@ -675,23 +684,34 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
       // Handle analytical queries
       const analyticsType = parsedResponse.analyticsType;
       const limit = parsedResponse.limit || 5;
+      const filter = parsedResponse.filter || 'all';
       
-      let resultSubscriptions = [...subscriptions];
+      // Filter subscriptions first based on filter
+      let filteredSubs = subscriptions;
+      if (filter === 'paused') {
+        filteredSubs = subscriptions.filter(sub => sub.status === 'paused');
+      } else if (filter === 'active') {
+        filteredSubs = subscriptions.filter(sub => sub.status === 'active');
+      }
+      
+      let resultSubscriptions = [...filteredSubs];
       let responseText = '';
+      
+      const filterText = filter === 'paused' ? 'paused ' : filter === 'active' ? 'active ' : '';
       
       if (analyticsType === 'top' || analyticsType === 'highest' || analyticsType === 'most-expensive') {
         // Sort by price descending and get top N
-        resultSubscriptions = subscriptions
+        resultSubscriptions = filteredSubs
           .sort((a, b) => b.price - a.price)
           .slice(0, limit);
-        responseText = `Here are your top ${limit} most expensive subscriptions:`;
+        responseText = `Here are your top ${limit} most expensive ${filterText}subscriptions:`;
         
       } else if (analyticsType === 'lowest' || analyticsType === 'cheapest') {
         // Sort by price ascending and get bottom N
-        resultSubscriptions = subscriptions
+        resultSubscriptions = filteredSubs
           .sort((a, b) => a.price - b.price)
           .slice(0, limit);
-        responseText = `Here are your ${limit} cheapest subscriptions:`;
+        responseText = `Here are your ${limit} cheapest ${filterText}subscriptions:`;
         
       } else if (analyticsType === 'total') {
         // Calculate total spending
@@ -714,6 +734,62 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
         .filter(sub => sub.status === 'active')
         .reduce((sum, sub) => sum + sub.price, 0);
       parsedResponse.response = responseText;
+      
+    } else if (parsedResponse.action === 'bulk') {
+      // Handle bulk operations on multiple subscriptions
+      const bulkAction = parsedResponse.bulkAction;
+      const filter = parsedResponse.filter || 'all';
+      
+      let targetSubscriptions = [];
+      
+      // If specific service names are provided (comma-separated)
+      if (parsedResponse.serviceName && parsedResponse.serviceName.includes(',')) {
+        const serviceNames = parsedResponse.serviceName.split(',').map(s => s.trim());
+        targetSubscriptions = subscriptions.filter(sub => 
+          serviceNames.some(name => new RegExp(name, 'i').test(sub.serviceName))
+        );
+      } else if (filter === 'paused') {
+        targetSubscriptions = subscriptions.filter(sub => sub.status === 'paused');
+      } else if (filter === 'active') {
+        targetSubscriptions = subscriptions.filter(sub => sub.status === 'active');
+      } else {
+        targetSubscriptions = subscriptions;
+      }
+      
+      let updatedCount = 0;
+      let deletedCount = 0;
+      
+      if (bulkAction === 'pause') {
+        // Pause multiple subscriptions
+        for (const sub of targetSubscriptions) {
+          if (sub.status !== 'paused') {
+            await Subscription.findByIdAndUpdate(sub._id, { status: 'paused' });
+            updatedCount++;
+          }
+        }
+        parsedResponse.response = `I've paused ${updatedCount} subscription${updatedCount !== 1 ? 's' : ''}.`;
+        
+      } else if (bulkAction === 'resume') {
+        // Resume multiple subscriptions
+        for (const sub of targetSubscriptions) {
+          if (sub.status === 'paused') {
+            await Subscription.findByIdAndUpdate(sub._id, { status: 'active' });
+            updatedCount++;
+          }
+        }
+        parsedResponse.response = `I've resumed ${updatedCount} subscription${updatedCount !== 1 ? 's' : ''}.`;
+        
+      } else if (bulkAction === 'delete') {
+        // Delete multiple subscriptions
+        for (const sub of targetSubscriptions) {
+          await Subscription.deleteOne({ _id: sub._id });
+          deletedCount++;
+        }
+        parsedResponse.response = `I've deleted ${deletedCount} subscription${deletedCount !== 1 ? 's' : ''}.`;
+      }
+      
+      parsedResponse.updated = updatedCount;
+      parsedResponse.deleted = deletedCount;
     }
 
     res.json(parsedResponse);

@@ -62,7 +62,7 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
       setMessages(prev => [...prev, aiMessage])
 
       // Refresh subscriptions if action was performed
-      if (['add', 'delete', 'pause', 'resume', 'list', 'analytics'].includes(response.action)) {
+      if (['add', 'delete', 'pause', 'resume', 'list', 'analytics', 'bulk'].includes(response.action)) {
         onUpdate()
       }
     } catch (error) {
