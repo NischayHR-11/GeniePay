@@ -123,8 +123,9 @@ let geminiModel;
 if (process.env.GEMINI_API_KEY) {
   try {
     genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    geminiModel = genAI.getGenerativeModel({ model: "gemini-pro" });
-    console.log('✅ Google Gemini AI initialized (FREE tier)');
+    // Updated to use gemini-1.5-flash (free tier, latest model)
+    geminiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    console.log('✅ Google Gemini AI initialized (FREE tier - gemini-1.5-flash)');
   } catch (error) {
     console.error('❌ Gemini initialization error:', error.message);
   }
