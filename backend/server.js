@@ -13,7 +13,7 @@ const helmet = require('helmet');
 const { body, validationResult } = require('express-validator');
 const nodemailer = require('nodemailer');
 const { Web3 } = require('web3');
-const OpenAI = require('openai');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 // ========================================
 // Express App Initialization
@@ -116,17 +116,17 @@ if (process.env.WEB3_PROVIDER_URL) {
 }
 
 // ========================================
-// OpenAI Initialization
+// Google Gemini AI Initialization
 // ========================================
-let openai;
-if (process.env.OPENAI_API_KEY) {
+let genAI;
+let geminiModel;
+if (process.env.GEMINI_API_KEY) {
   try {
-    openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-    console.log('✅ OpenAI initialized');
+    genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    geminiModel = genAI.getGenerativeModel({ model: "gemini-pro" });
+    console.log('✅ Google Gemini AI initialized (FREE tier)');
   } catch (error) {
-    console.error('❌ OpenAI initialization error:', error.message);
+    console.error('❌ Gemini initialization error:', error.message);
   }
 }
 
@@ -488,7 +488,7 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Command is required' });
     }
 
-    if (!openai) {
+    if (!geminiModel) {
       return res.status(503).json({ error: 'AI service not configured' });
     }
 
@@ -498,33 +498,36 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
       `${sub.serviceName} - ₹${sub.price} - Status: ${sub.status}`
     ).join(', ');
 
-    // Create AI prompt
-    const systemPrompt = `You are an AI assistant for GeniePay, a subscription management system.
+    // Create AI prompt for Gemini
+    const prompt = `You are an AI assistant for GeniePay, a subscription management system.
     User's current subscriptions: ${subscriptionList || 'None'}
     
-    Analyze the user's command and return a JSON response with:
+    Analyze the user's command and return ONLY a JSON response (no markdown, no extra text) with this exact format:
     {
       "action": "add" | "delete" | "pause" | "resume" | "list" | "info",
       "serviceName": "service name if applicable",
       "price": "price if adding subscription",
       "response": "friendly response to user"
-    }`;
+    }
+    
+    User command: ${command}`;
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: command }
-      ],
-      temperature: 0.7,
-    });
-
-    const aiResponse = completion.choices[0].message.content;
+    // Call Gemini API
+    const result = await geminiModel.generateContent(prompt);
+    const aiResponse = result.response.text();
+    
+    // Clean up response (remove markdown code blocks if present)
+    let cleanedResponse = aiResponse.trim();
+    if (cleanedResponse.startsWith('```json')) {
+      cleanedResponse = cleanedResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+    } else if (cleanedResponse.startsWith('```')) {
+      cleanedResponse = cleanedResponse.replace(/```\n?/g, '');
+    }
     
     // Try to parse JSON response
     let parsedResponse;
     try {
-      parsedResponse = JSON.parse(aiResponse);
+      parsedResponse = JSON.parse(cleanedResponse);
     } catch (e) {
       // If not JSON, return as plain text
       return res.json({
