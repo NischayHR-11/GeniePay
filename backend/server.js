@@ -523,9 +523,10 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
     
     Analyze the user's command and return ONLY a JSON response (no markdown, no extra text) with this exact format:
     {
-      "action": "add" | "delete" | "pause" | "resume" | "list" | "analytics" | "bulk" | "info",
+      "action": "add" | "delete" | "pause" | "resume" | "list" | "analytics" | "bulk" | "bulkAdd" | "info",
       "serviceName": "service name if applicable (for single operations)",
       "price": "price if adding subscription (only for add action)",
+      "subscriptions": [{"name": "service1", "price": 299}, {"name": "service2", "price": 499}] (only for bulkAdd - multiple subscriptions at once),
       "filter": "active" | "paused" | "all" (for list action or bulk operations)",
       "analyticsType": "top" | "highest" | "lowest" | "cheapest" | "most-expensive" | "total" (only for analytics action),
       "limit": number (for top/highest/lowest queries - IMPORTANT: use 1 for singular words like "the highest", "the cheapest", "least price"),
@@ -553,9 +554,12 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
        - "resume all paused" → action: "bulk", bulkAction: "resume", filter: "paused"
        - "pause all active" → action: "bulk", bulkAction: "pause", filter: "active"
        - "pause netflix and spotify" → action: "bulk", bulkAction: "pause", serviceName: "netflix,spotify"
+    10. For adding MULTIPLE subscriptions at once:
+       - "add netflix for 649 and spotify for 119" → action: "bulkAdd", subscriptions: [{"name": "Netflix", "price": 649}, {"name": "Spotify", "price": 119}]
+       - "create prime for 299 and hotstar for 399" → action: "bulkAdd", subscriptions: [{"name": "Prime", "price": 299}, {"name": "Hotstar", "price": 399}]
     
     Action keywords:
-    - "add"/"create"/"new" → action: "add" (requires serviceName and price)
+    - "add"/"create"/"new" → action: "add" (single subscription) OR action: "bulkAdd" (if "and" is used with multiple subscriptions)
     - "delete"/"remove"/"cancel" → action: "delete" (single) or "bulk" (multiple)
     - "pause"/"stop"/"hold" → action: "pause" (single) or "bulk" (multiple)
     - "resume"/"restart"/"activate"/"continue"/"unpause"/"reactivate" → action: "resume" (single) or "bulk" (multiple)
@@ -592,7 +596,7 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
 
     // Execute action based on AI response
     if (parsedResponse.action === 'add' && parsedResponse.serviceName && parsedResponse.price) {
-      // Add new subscription
+      // Add single subscription
       const newSubscription = new Subscription({
         userId: req.user.id,
         serviceName: parsedResponse.serviceName,
@@ -602,6 +606,25 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
       });
       await newSubscription.save();
       parsedResponse.subscriptionId = newSubscription._id;
+      
+    } else if (parsedResponse.action === 'bulkAdd' && parsedResponse.subscriptions && Array.isArray(parsedResponse.subscriptions)) {
+      // Add multiple subscriptions at once
+      const addedSubscriptions = [];
+      
+      for (const sub of parsedResponse.subscriptions) {
+        const newSubscription = new Subscription({
+          userId: req.user.id,
+          serviceName: sub.name || sub.serviceName,
+          price: parseFloat(sub.price),
+          renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+          status: 'active'
+        });
+        await newSubscription.save();
+        addedSubscriptions.push(sub.name || sub.serviceName);
+      }
+      
+      parsedResponse.response = `I've added ${addedSubscriptions.length} subscriptions: ${addedSubscriptions.join(', ')}.`;
+      parsedResponse.addedCount = addedSubscriptions.length;
       
     } else if (parsedResponse.action === 'delete' && parsedResponse.serviceName) {
       // Delete subscription
