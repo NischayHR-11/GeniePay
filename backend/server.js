@@ -123,9 +123,17 @@ let geminiModel;
 if (process.env.GEMINI_API_KEY) {
   try {
     genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    // Updated to use gemini-1.5-flash (free tier, latest model)
-    geminiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    console.log('✅ Google Gemini AI initialized (FREE tier - gemini-1.5-flash)');
+    // Use gemini-2.5-flash (latest stable model - FREE tier)
+    geminiModel = genAI.getGenerativeModel({ 
+      model: "gemini-2.5-flash",
+      generationConfig: {
+        temperature: 0.7,
+        topK: 40,
+        topP: 0.95,
+        maxOutputTokens: 2048,
+      }
+    });
+    console.log('✅ Google Gemini AI initialized (FREE tier - gemini-2.5-flash)');
   } catch (error) {
     console.error('❌ Gemini initialization error:', error.message);
   }
