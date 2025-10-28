@@ -54,8 +54,14 @@ export const AuthProvider = ({ children }) => {
   const signup = async (name, email, password, walletAddress) => {
     try {
       const response = await signupUser(name, email, password, walletAddress)
-      const { token, user } = response
+      
+      // Check if OTP verification is required
+      if (response.requiresVerification) {
+        return { success: true, requiresVerification: true }
+      }
 
+      // Old flow (if backend doesn't require verification)
+      const { token, user } = response
       localStorage.setItem('token', token)
       localStorage.setItem('user', JSON.stringify(user))
       
@@ -68,6 +74,41 @@ export const AuthProvider = ({ children }) => {
       return { 
         success: false, 
         error: error.response?.data?.error || 'Signup failed' 
+      }
+    }
+  }
+
+  const verifyOTP = async (email, otp) => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        const { token, user } = data
+
+        localStorage.setItem('token', token)
+        localStorage.setItem('user', JSON.stringify(user))
+        
+        setToken(token)
+        setUser(user)
+        setIsAuthenticated(true)
+
+        return { success: true }
+      } else {
+        return { 
+          success: false, 
+          error: data.error || 'OTP verification failed' 
+        }
+      }
+    } catch (error) {
+      return { 
+        success: false, 
+        error: 'OTP verification failed' 
       }
     }
   }
@@ -87,6 +128,7 @@ export const AuthProvider = ({ children }) => {
     loading,
     login,
     signup,
+    verifyOTP,
     logout,
   }
 

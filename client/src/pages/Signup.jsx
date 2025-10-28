@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Link, useNavigate } from 'react-router-dom'
-import { Zap, Mail, Lock, User, Wallet, Loader } from 'lucide-react'
+import { Zap, Mail, Lock, User, Wallet, Loader, Shield } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { connectWallet } from '../utils/web3'
 import SimpleBackground from '../components/SimpleBackground'
@@ -12,10 +12,12 @@ export default function Signup() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [walletAddress, setWalletAddress] = useState('')
+  const [otp, setOtp] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [step, setStep] = useState(1) // 1: Signup form, 2: OTP verification
   
-  const { signup } = useAuth()
+  const { signup, verifyOTP } = useAuth()
   const navigate = useNavigate()
 
   const handleConnectWallet = async () => {
@@ -47,9 +49,58 @@ export default function Signup() {
     const result = await signup(name, email, password, walletAddress)
 
     if (result.success) {
+      // Move to OTP verification step
+      setStep(2)
+    } else {
+      setError(result.error)
+    }
+
+    setLoading(false)
+  }
+
+  const handleOTPSubmit = async (e) => {
+    e.preventDefault()
+    setError('')
+
+    if (otp.length !== 6) {
+      setError('Please enter a valid 6-digit OTP')
+      return
+    }
+
+    setLoading(true)
+
+    const result = await verifyOTP(email, otp)
+
+    if (result.success) {
       navigate('/dashboard')
     } else {
       setError(result.error)
+    }
+
+    setLoading(false)
+  }
+
+  const handleResendOTP = async () => {
+    setError('')
+    setLoading(true)
+
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/resend-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        setError('') // Clear any errors
+        alert('New OTP sent to your email!')
+      } else {
+        setError(data.error || 'Failed to resend OTP')
+      }
+    } catch (err) {
+      setError('Failed to resend OTP. Please try again.')
     }
 
     setLoading(false)
@@ -74,10 +125,12 @@ export default function Signup() {
 
           {/* Title */}
           <h2 className="text-2xl font-bold text-center mb-2">
-            Create Account
+            {step === 1 ? 'Create Account' : 'Verify Your Email'}
           </h2>
           <p className="text-gray-400 text-center mb-8">
-            Join the future of subscription management
+            {step === 1 
+              ? 'Join the future of subscription management' 
+              : `Enter the 6-digit code sent to ${email}`}
           </p>
 
           {/* Error Message */}
@@ -91,8 +144,9 @@ export default function Signup() {
             </motion.div>
           )}
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Step 1: Signup Form */}
+          {step === 1 && (
+            <form onSubmit={handleSubmit} className="space-y-5">
             {/* Name */}
             <div>
               <label className="block text-sm font-medium mb-2">
@@ -208,6 +262,69 @@ export default function Signup() {
               )}
             </button>
           </form>
+          )}
+
+          {/* Step 2: OTP Verification */}
+          {step === 2 && (
+            <form onSubmit={handleOTPSubmit} className="space-y-5">
+              {/* OTP Input */}
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Verification Code
+                </label>
+                <div className="relative">
+                  <Shield className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    type="text"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="Enter 6-digit code"
+                    className="w-full pl-12 pr-4 py-3 text-center text-2xl tracking-widest"
+                    maxLength={6}
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Verify Button */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full thor-button py-3 flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <>
+                    <Loader className="w-5 h-5 animate-spin" />
+                    <span>Verifying...</span>
+                  </>
+                ) : (
+                  <>
+                    <Shield className="w-5 h-5" />
+                    <span>Verify Email</span>
+                  </>
+                )}
+              </button>
+
+              {/* Resend OTP */}
+              <button
+                type="button"
+                onClick={handleResendOTP}
+                disabled={loading}
+                className="w-full text-thor-blue hover:text-thor-red transition-colors text-sm"
+              >
+                Didn't receive code? Resend OTP
+              </button>
+
+              {/* Back Button */}
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="w-full text-gray-400 hover:text-white transition-colors text-sm"
+              >
+                ← Back to signup
+              </button>
+            </form>
+          )}
 
           {/* Login Link */}
           <div className="mt-6 text-center text-gray-400">
