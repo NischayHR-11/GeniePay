@@ -140,19 +140,28 @@ if (process.env.GEMINI_API_KEY) {
 }
 
 // ========================================
-// Email Configuration - Nodemailer with multiple port fallback
 // ========================================
+// Email Configuration - Resend (Production) & Nodemailer (Local fallback)
+// ========================================
+const { Resend } = require('resend');
+let resend;
 let transporter;
 let emailService = 'none';
 
-if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
-  // Try multiple ports for better compatibility with hosting platforms
+// Try Resend first (for production - works on Render)
+if (process.env.RESEND_API_KEY) {
+  resend = new Resend(process.env.RESEND_API_KEY);
+  emailService = 'resend';
+  console.log('✅ Resend email service initialized');
+}
+// Fallback to Nodemailer (for local development)
+else if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
   const emailPort = parseInt(process.env.EMAIL_PORT) || 587;
   
   const transportConfig = {
     host: process.env.EMAIL_HOST || 'smtp.gmail.com',
     port: emailPort,
-    secure: emailPort === 465, // true for 465, false for 587/25
+    secure: emailPort === 465,
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASSWORD,
@@ -161,21 +170,18 @@ if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
       rejectUnauthorized: false,
       ciphers: 'SSLv3'
     },
-    connectionTimeout: 15000, // 15 seconds
+    connectionTimeout: 15000,
     greetingTimeout: 15000,
     socketTimeout: 15000,
-    debug: false, // Set to true for debugging
-    logger: false
   };
 
-  // For port 587, use STARTTLS
   if (emailPort === 587) {
     transportConfig.requireTLS = true;
   }
 
   transporter = nodemailer.createTransport(transportConfig);
   emailService = 'nodemailer';
-  console.log(`✅ Nodemailer initialized (Port: ${emailPort}, Secure: ${transportConfig.secure})`);
+  console.log(`✅ Nodemailer initialized (Port: ${emailPort})`);
 }
 
 // ========================================
@@ -211,30 +217,43 @@ const generateToken = (userId, email) => {
   );
 };
 
-// Send Email Notification (Non-blocking)
+// Send Email Notification (Non-blocking with Resend or Nodemailer)
 const sendEmail = async (to, subject, html) => {
   if (emailService === 'none') {
     console.log('⚠️ Email not configured - skipping email send');
-    return Promise.resolve(); // Return resolved promise
+    return Promise.resolve();
   }
 
   // Send email in background without blocking
   return new Promise((resolve) => {
-    const sendPromise = transporter.sendMail({
-      from: `"GeniePay" <${process.env.EMAIL_USER}>`,
-      to,
-      subject,
-      html,
-    });
+    let sendPromise;
+
+    if (emailService === 'resend') {
+      // Resend API
+      sendPromise = resend.emails.send({
+        from: process.env.RESEND_FROM_EMAIL || 'GeniePay <onboarding@resend.dev>',
+        to: [to],
+        subject,
+        html,
+      });
+    } else if (emailService === 'nodemailer') {
+      // Nodemailer SMTP
+      sendPromise = transporter.sendMail({
+        from: `"GeniePay" <${process.env.EMAIL_USER}>`,
+        to,
+        subject,
+        html,
+      });
+    }
 
     sendPromise
       .then(() => {
-        console.log('✅ Email sent successfully to:', to);
+        console.log(`✅ Email sent via ${emailService} to:`, to);
         resolve();
       })
       .catch((error) => {
-        console.error('❌ Email error:', error.message);
-        resolve(); // Resolve anyway so it doesn't block the request
+        console.error(`❌ Email error (${emailService}):`, error.message);
+        resolve(); // Resolve anyway so it doesn't block
       });
     
     // Don't wait for email - resolve immediately after 100ms
@@ -265,7 +284,7 @@ app.get('/', (req, res) => {
 // Authentication Routes
 // ========================================
 
-// POST /signup - Register new user (Direct signup without email verification)
+// POST /signup - Register new user (Step 1: Send OTP)
 app.post('/signup',
   [
     body('name').trim().notEmpty().withMessage('Name is required'),
@@ -285,57 +304,86 @@ app.post('/signup',
       const existingUser = await User.findOne({ email });
       
       if (existingUser) {
-        return res.status(400).json({ 
-          error: 'User already exists with this email. Please login.' 
-        });
+        if (existingUser.isEmailVerified) {
+          return res.status(400).json({ 
+            error: 'User already exists with this email. Please login.' 
+          });
+        } else {
+          // Resend OTP to unverified user
+          const otp = Math.floor(100000 + Math.random() * 900000).toString();
+          const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+          
+          existingUser.emailVerificationOTP = otp;
+          existingUser.otpExpiry = otpExpiry;
+          await existingUser.save();
+
+          // Send OTP email
+          await sendEmail(
+            email,
+            '🔐 GeniePay - Email Verification OTP',
+            `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h1 style="color: #FF0044;">Welcome Back!</h1>
+              <p>Hi <strong>${existingUser.name}</strong>,</p>
+              <p>You attempted to sign up again. Here's your new verification code:</p>
+              <div style="background: #1a1a2e; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0;">
+                <p style="color: #00D9FF; font-size: 14px; margin: 0;">Your Verification Code:</p>
+                <h2 style="color: #fff; font-size: 36px; letter-spacing: 8px; margin: 10px 0;">${otp}</h2>
+              </div>
+              <p style="color: #FF0044;"><strong>This OTP will expire in 10 minutes.</strong></p>
+              <p>Best regards,<br><strong>GeniePay Team</strong></p>
+            </div>`
+          );
+
+          return res.status(200).json({
+            message: 'New OTP sent to your email. Please verify to complete registration.',
+            email: email,
+            requiresVerification: true
+          });
+        }
       }
+
+      // Generate 6-digit OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
       // Hash password
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
 
-      // Create new user (verified by default)
+      // Create new unverified user
       const user = new User({
         name,
         email,
         password: hashedPassword,
         walletAddress: walletAddress || null,
-        isEmailVerified: true // Auto-verified since we removed OTP step
+        emailVerificationOTP: otp,
+        otpExpiry: otpExpiry,
+        isEmailVerified: false
       });
       await user.save();
 
-      // Generate JWT token
-      const token = generateToken(user._id, user.email);
-
-      // Send welcome email (non-blocking, optional)
-      sendEmail(
+      // Send OTP email with Resend
+      await sendEmail(
         email,
-        '🎉 Welcome to GeniePay!',
+        '🔐 GeniePay - Email Verification OTP',
         `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h1 style="color: #FF0044;">Welcome ${name}!</h1>
-          <p>Your account has been created successfully! 🎉</p>
-          <p>You can now start managing your subscriptions with AI and blockchain automation.</p>
-          <div style="background: #1a1a2e; padding: 20px; border-radius: 8px; margin: 20px 0;">
-            <h3 style="color: #00D9FF;">✨ Get Started:</h3>
-            <ul style="color: #fff;">
-              <li>Add your subscriptions</li>
-              <li>Chat with AI assistant</li>
-              <li>Automate payments with blockchain</li>
-            </ul>
+          <h1 style="color: #FF0044;">Welcome to GeniePay!</h1>
+          <p>Hi <strong>${name}</strong>,</p>
+          <p>Thank you for signing up! Please verify your email address to complete registration.</p>
+          <div style="background: #1a1a2e; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0;">
+            <p style="color: #00D9FF; font-size: 14px; margin: 0;">Your Verification Code:</p>
+            <h2 style="color: #fff; font-size: 36px; letter-spacing: 8px; margin: 10px 0;">${otp}</h2>
           </div>
+          <p style="color: #FF0044;"><strong>This OTP will expire in 10 minutes.</strong></p>
+          <p>If you didn't request this, please ignore this email.</p>
           <p>Best regards,<br><strong>GeniePay Team</strong></p>
         </div>`
-      ).catch(err => console.error('Welcome email error:', err));
+      );
 
-      res.status(201).json({
-        message: 'Account created successfully!',
-        token,
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          walletAddress: user.walletAddress
-        }
+      res.status(200).json({
+        message: 'OTP sent to your email. Please verify to complete registration.',
+        email: email,
+        requiresVerification: true
       });
     } catch (error) {
       console.error('Signup error:', error);
@@ -514,6 +562,15 @@ app.post('/login',
       const isMatch = await bcrypt.compare(password, user.password);
       if (!isMatch) {
         return res.status(400).json({ error: 'Invalid credentials' });
+      }
+
+      // Check if email is verified
+      if (!user.isEmailVerified) {
+        return res.status(403).json({ 
+          error: 'Please verify your email first. Check your inbox for the verification code.',
+          requiresVerification: true,
+          email: user.email
+        });
       }
 
       // Generate JWT token

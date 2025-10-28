@@ -24,7 +24,12 @@ export default function Login() {
     if (result.success) {
       navigate('/dashboard')
     } else {
-      setError(result.error)
+      // Check if user needs to verify email
+      if (result.error && result.error.includes('verify your email')) {
+        setError(result.error)
+      } else {
+        setError(result.error)
+      }
     }
 
     setLoading(false)
