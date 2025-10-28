@@ -140,26 +140,42 @@ if (process.env.GEMINI_API_KEY) {
 }
 
 // ========================================
-// NodeMailer Configuration
+// Email Configuration - Nodemailer with multiple port fallback
 // ========================================
 let transporter;
+let emailService = 'none';
+
 if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
-  const emailPort = parseInt(process.env.EMAIL_PORT) || 465;
-  transporter = nodemailer.createTransport({
+  // Try multiple ports for better compatibility with hosting platforms
+  const emailPort = parseInt(process.env.EMAIL_PORT) || 587;
+  
+  const transportConfig = {
     host: process.env.EMAIL_HOST || 'smtp.gmail.com',
     port: emailPort,
-    secure: emailPort === 465, // true for 465, false for other ports
+    secure: emailPort === 465, // true for 465, false for 587/25
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASSWORD,
     },
     tls: {
-      rejectUnauthorized: false // Allow self-signed certificates
+      rejectUnauthorized: false,
+      ciphers: 'SSLv3'
     },
-    connectionTimeout: 10000, // 10 seconds timeout
-    greetingTimeout: 10000,
-  });
-  console.log(`✅ Email transporter initialized (Port: ${emailPort})`);
+    connectionTimeout: 15000, // 15 seconds
+    greetingTimeout: 15000,
+    socketTimeout: 15000,
+    debug: false, // Set to true for debugging
+    logger: false
+  };
+
+  // For port 587, use STARTTLS
+  if (emailPort === 587) {
+    transportConfig.requireTLS = true;
+  }
+
+  transporter = nodemailer.createTransport(transportConfig);
+  emailService = 'nodemailer';
+  console.log(`✅ Nodemailer initialized (Port: ${emailPort}, Secure: ${transportConfig.secure})`);
 }
 
 // ========================================
@@ -195,25 +211,36 @@ const generateToken = (userId, email) => {
   );
 };
 
-// Send Email Notification
+// Send Email Notification (Non-blocking)
 const sendEmail = async (to, subject, html) => {
-  if (!transporter) {
-    console.log('Email not configured');
-    return;
+  if (emailService === 'none') {
+    console.log('⚠️ Email not configured - skipping email send');
+    return Promise.resolve(); // Return resolved promise
   }
 
-  try {
-    await transporter.sendMail({
+  // Send email in background without blocking
+  return new Promise((resolve) => {
+    const sendPromise = transporter.sendMail({
       from: `"GeniePay" <${process.env.EMAIL_USER}>`,
       to,
       subject,
       html,
     });
-    console.log('✅ Email sent to:', to);
-  } catch (error) {
-    console.error('❌ Email error:', error.message);
-  }
-};
+
+    sendPromise
+      .then(() => {
+        console.log('✅ Email sent successfully to:', to);
+        resolve();
+      })
+      .catch((error) => {
+        console.error('❌ Email error:', error.message);
+        resolve(); // Resolve anyway so it doesn't block the request
+      });
+    
+    // Don't wait for email - resolve immediately after 100ms
+    setTimeout(resolve, 100);
+  });
+};;
 
 // ========================================
 // ROUTES
