@@ -754,6 +754,26 @@ app.post('/ai/command', authenticateToken, async (req, res) => {
       `${sub.serviceName} - ₹${sub.price} - Status: ${sub.status}`
     ).join(', ');
 
+    // Check if command is too vague (single word commands without context)
+    const singleWordCommands = ['pause', 'resume', 'delete', 'remove', 'cancel', 'stop', 'activate', 'unpause', 'restart'];
+    const commandWords = command.trim().toLowerCase().split(/\s+/);
+    
+    // If it's ONLY a single action word with no subscription name
+    if (commandWords.length === 1 && singleWordCommands.includes(commandWords[0])) {
+      const actionVerb = commandWords[0];
+      let actionName = actionVerb;
+      if (actionVerb === 'remove' || actionVerb === 'cancel') actionName = 'delete';
+      if (actionVerb === 'stop') actionName = 'pause';
+      if (actionVerb === 'activate' || actionVerb === 'unpause' || actionVerb === 'restart') actionName = 'resume';
+      
+      return res.json({
+        response: `Which subscription would you like to ${actionName}? Please specify the subscription name.`,
+        action: 'clarification',
+        needsInput: true,
+        expectedAction: actionName
+      });
+    }
+
     // Build conversation context
     let conversationContext = '';
     if (conversationHistory.length > 0) {
