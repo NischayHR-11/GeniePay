@@ -247,12 +247,19 @@ const sendEmail = async (to, subject, html) => {
     }
 
     sendPromise
-      .then(() => {
+      .then((data) => {
         console.log(`✅ Email sent via ${emailService} to:`, to);
+        if (emailService === 'resend' && data) {
+          console.log('📧 Resend Email ID:', data.id);
+        }
         resolve();
       })
       .catch((error) => {
         console.error(`❌ Email error (${emailService}):`, error.message);
+        if (error.response) {
+          console.error('Error details:', error.response);
+        }
+        console.error('Full error:', error);
         resolve(); // Resolve anyway so it doesn't block
       });
     
