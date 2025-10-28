@@ -265,7 +265,7 @@ app.get('/', (req, res) => {
 // Authentication Routes
 // ========================================
 
-// POST /signup - Register new user (Step 1: Send OTP)
+// POST /signup - Register new user (Direct signup without email verification)
 app.post('/signup',
   [
     body('name').trim().notEmpty().withMessage('Name is required'),
@@ -281,70 +281,66 @@ app.post('/signup',
 
       const { name, email, password, walletAddress } = req.body;
 
-      // Check if user already exists (verified or unverified)
+      // Check if user already exists
       const existingUser = await User.findOne({ email });
       
       if (existingUser) {
-        if (existingUser.isEmailVerified) {
-          return res.status(400).json({ 
-            error: 'User already exists with this email. Please login.' 
-          });
-        } else {
-          return res.status(400).json({ 
-            error: 'This email is already registered but not verified. Please check your email for the OTP or use a different email.' 
-          });
-        }
+        return res.status(400).json({ 
+          error: 'User already exists with this email. Please login.' 
+        });
       }
-
-      // Generate 6-digit OTP
-      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
       // Hash password
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
 
-      // Create new unverified user
+      // Create new user (verified by default)
       const user = new User({
         name,
         email,
         password: hashedPassword,
         walletAddress: walletAddress || null,
-        emailVerificationOTP: otp,
-        otpExpiry: otpExpiry,
-        isEmailVerified: false
+        isEmailVerified: true // Auto-verified since we removed OTP step
       });
       await user.save();
 
-      // Send OTP email
-      if (transporter) {
-        await sendEmail(
-          email,
-          '🔐 GeniePay - Email Verification OTP',
-          `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h1 style="color: #FF0044;">Welcome to GeniePay!</h1>
-            <p>Hi <strong>${name}</strong>,</p>
-            <p>Thank you for signing up! Please verify your email address to complete registration.</p>
-            <div style="background: #1a1a2e; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0;">
-              <p style="color: #00D9FF; font-size: 14px; margin: 0;">Your Verification Code:</p>
-              <h2 style="color: #fff; font-size: 36px; letter-spacing: 8px; margin: 10px 0;">${otp}</h2>
-            </div>
-            <p style="color: #FF0044;"><strong>This OTP will expire in 10 minutes.</strong></p>
-            <p>If you didn't request this, please ignore this email.</p>
-            <p>Best regards,<br><strong>GeniePay Team</strong></p>
-          </div>`
-        );
-      }
+      // Generate JWT token
+      const token = generateToken(user._id, user.email);
 
-      res.status(200).json({
-        message: 'OTP sent to your email. Please verify to complete registration.',
-        email: email,
-        requiresVerification: true
+      // Send welcome email (non-blocking, optional)
+      sendEmail(
+        email,
+        '🎉 Welcome to GeniePay!',
+        `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h1 style="color: #FF0044;">Welcome ${name}!</h1>
+          <p>Your account has been created successfully! 🎉</p>
+          <p>You can now start managing your subscriptions with AI and blockchain automation.</p>
+          <div style="background: #1a1a2e; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="color: #00D9FF;">✨ Get Started:</h3>
+            <ul style="color: #fff;">
+              <li>Add your subscriptions</li>
+              <li>Chat with AI assistant</li>
+              <li>Automate payments with blockchain</li>
+            </ul>
+          </div>
+          <p>Best regards,<br><strong>GeniePay Team</strong></p>
+        </div>`
+      ).catch(err => console.error('Welcome email error:', err));
+
+      res.status(201).json({
+        message: 'Account created successfully!',
+        token,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          walletAddress: user.walletAddress
+        }
       });
     } catch (error) {
       console.error('Signup error:', error);
       
-      // Handle duplicate key error (shouldn't happen now, but just in case)
+      // Handle duplicate key error
       if (error.code === 11000) {
         return res.status(400).json({ 
           error: 'An account with this email already exists. Please login or use a different email.' 
@@ -518,15 +514,6 @@ app.post('/login',
       const isMatch = await bcrypt.compare(password, user.password);
       if (!isMatch) {
         return res.status(400).json({ error: 'Invalid credentials' });
-      }
-
-      // Check if email is verified
-      if (!user.isEmailVerified) {
-        return res.status(403).json({ 
-          error: 'Please verify your email first',
-          requiresVerification: true,
-          email: user.email
-        });
       }
 
       // Generate JWT token
