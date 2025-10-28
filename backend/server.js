@@ -224,48 +224,46 @@ const sendEmail = async (to, subject, html) => {
     return Promise.resolve();
   }
 
-  // Send email in background without blocking
-  return new Promise((resolve) => {
-    let sendPromise;
-
+  try {
     if (emailService === 'resend') {
-      // Resend API
-      sendPromise = resend.emails.send({
+      // Resend API - wait for response to see errors
+      const data = await resend.emails.send({
         from: process.env.RESEND_FROM_EMAIL || 'GeniePay <onboarding@resend.dev>',
         to: [to],
         subject,
         html,
       });
+      
+      console.log(`✅ Email sent via Resend to: ${to}`);
+      console.log(`📧 Resend Email ID: ${data.id || data.data?.id}`);
+      console.log(`📊 Full Response:`, JSON.stringify(data, null, 2));
+      
     } else if (emailService === 'nodemailer') {
       // Nodemailer SMTP
-      sendPromise = transporter.sendMail({
+      await transporter.sendMail({
         from: `"GeniePay" <${process.env.EMAIL_USER}>`,
         to,
         subject,
         html,
       });
+      console.log(`✅ Email sent via Nodemailer to: ${to}`);
     }
-
-    sendPromise
-      .then((data) => {
-        console.log(`✅ Email sent via ${emailService} to:`, to);
-        if (emailService === 'resend' && data) {
-          console.log('📧 Resend Email ID:', data.id);
-        }
-        resolve();
-      })
-      .catch((error) => {
-        console.error(`❌ Email error (${emailService}):`, error.message);
-        if (error.response) {
-          console.error('Error details:', error.response);
-        }
-        console.error('Full error:', error);
-        resolve(); // Resolve anyway so it doesn't block
-      });
+  } catch (error) {
+    console.error(`❌ Email send failed (${emailService}):`, error.message);
+    console.error(`📋 Error Name: ${error.name}`);
+    console.error(`📋 Error Code: ${error.code}`);
+    console.error(`📋 Status Code: ${error.statusCode}`);
     
-    // Don't wait for email - resolve immediately after 100ms
-    setTimeout(resolve, 100);
-  });
+    if (error.response) {
+      console.error('📋 Error Response:', JSON.stringify(error.response, null, 2));
+    }
+    
+    if (error.message) {
+      console.error('📋 Error Message:', error.message);
+    }
+    
+    console.error('📋 Full Error Object:', error);
+  }
 };;
 
 // ========================================
