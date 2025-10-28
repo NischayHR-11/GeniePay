@@ -152,6 +152,9 @@ if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASSWORD,
     },
+    tls: {
+      rejectUnauthorized: false // Allow self-signed certificates
+    }
   });
   console.log('✅ Email transporter initialized');
 }
@@ -232,7 +235,7 @@ app.get('/', (req, res) => {
 // Authentication Routes
 // ========================================
 
-// POST /signup - Register new user
+// POST /signup - Register new user (Step 1: Send OTP)
 app.post('/signup',
   [
     body('name').trim().notEmpty().withMessage('Name is required'),
@@ -248,24 +251,116 @@ app.post('/signup',
 
       const { name, email, password, walletAddress } = req.body;
 
-      // Check if user exists
+      // Check if user already exists (verified or unverified)
       const existingUser = await User.findOne({ email });
+      
       if (existingUser) {
-        return res.status(400).json({ error: 'User already exists with this email' });
+        if (existingUser.isEmailVerified) {
+          return res.status(400).json({ 
+            error: 'User already exists with this email. Please login.' 
+          });
+        } else {
+          return res.status(400).json({ 
+            error: 'This email is already registered but not verified. Please check your email for the OTP or use a different email.' 
+          });
+        }
       }
+
+      // Generate 6-digit OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
       // Hash password
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
 
-      // Create new user
+      // Create new unverified user
       const user = new User({
         name,
         email,
         password: hashedPassword,
-        walletAddress: walletAddress || null
+        walletAddress: walletAddress || null,
+        emailVerificationOTP: otp,
+        otpExpiry: otpExpiry,
+        isEmailVerified: false
       });
+      await user.save();
 
+      // Send OTP email
+      if (transporter) {
+        await sendEmail(
+          email,
+          '🔐 GeniePay - Email Verification OTP',
+          `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h1 style="color: #FF0044;">Welcome to GeniePay!</h1>
+            <p>Hi <strong>${name}</strong>,</p>
+            <p>Thank you for signing up! Please verify your email address to complete registration.</p>
+            <div style="background: #1a1a2e; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0;">
+              <p style="color: #00D9FF; font-size: 14px; margin: 0;">Your Verification Code:</p>
+              <h2 style="color: #fff; font-size: 36px; letter-spacing: 8px; margin: 10px 0;">${otp}</h2>
+            </div>
+            <p style="color: #FF0044;"><strong>This OTP will expire in 10 minutes.</strong></p>
+            <p>If you didn't request this, please ignore this email.</p>
+            <p>Best regards,<br><strong>GeniePay Team</strong></p>
+          </div>`
+        );
+      }
+
+      res.status(200).json({
+        message: 'OTP sent to your email. Please verify to complete registration.',
+        email: email,
+        requiresVerification: true
+      });
+    } catch (error) {
+      console.error('Signup error:', error);
+      
+      // Handle duplicate key error (shouldn't happen now, but just in case)
+      if (error.code === 11000) {
+        return res.status(400).json({ 
+          error: 'An account with this email already exists. Please login or use a different email.' 
+        });
+      }
+      
+      res.status(500).json({ error: 'Server error during signup. Please try again later.' });
+    }
+  }
+);
+
+// POST /verify-otp - Verify email with OTP (Step 2: Complete registration)
+app.post('/verify-otp',
+  [
+    body('email').isEmail().withMessage('Valid email is required'),
+    body('otp').isLength({ min: 6, max: 6 }).withMessage('OTP must be 6 digits'),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { email, otp } = req.body;
+
+      // Find user
+      const user = await User.findOne({ email, isEmailVerified: false });
+      if (!user) {
+        return res.status(400).json({ error: 'User not found or already verified' });
+      }
+
+      // Check OTP expiry
+      if (new Date() > user.otpExpiry) {
+        return res.status(400).json({ error: 'OTP has expired. Please request a new one.' });
+      }
+
+      // Verify OTP
+      if (user.emailVerificationOTP !== otp) {
+        return res.status(400).json({ error: 'Invalid OTP' });
+      }
+
+      // Mark email as verified
+      user.isEmailVerified = true;
+      user.emailVerificationOTP = null;
+      user.otpExpiry = null;
       await user.save();
 
       // Generate JWT token
@@ -273,17 +368,28 @@ app.post('/signup',
 
       // Send welcome email
       if (transporter) {
-        await sendEmail(
+        sendEmail(
           email,
-          '🌩️ Welcome to GeniePay!',
-          `<h1>Welcome ${name}!</h1>
-           <p>Your account has been created successfully.</p>
-           <p>Start managing your subscriptions with AI and blockchain automation.</p>`
-        );
+          '🎉 Welcome to GeniePay!',
+          `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h1 style="color: #FF0044;">Welcome ${user.name}!</h1>
+            <p>Your email has been verified successfully! 🎉</p>
+            <p>You can now start managing your subscriptions with AI and blockchain automation.</p>
+            <div style="background: #1a1a2e; padding: 20px; border-radius: 8px; margin: 20px 0;">
+              <h3 style="color: #00D9FF;">✨ Get Started:</h3>
+              <ul style="color: #fff;">
+                <li>Add your subscriptions</li>
+                <li>Chat with AI assistant</li>
+                <li>Automate payments with blockchain</li>
+              </ul>
+            </div>
+            <p>Best regards,<br><strong>GeniePay Team</strong></p>
+          </div>`
+        ).catch(err => console.error('Welcome email error:', err));
       }
 
-      res.status(201).json({
-        message: 'User registered successfully',
+      res.status(200).json({
+        message: 'Email verified successfully!',
         token,
         user: {
           id: user._id,
@@ -293,8 +399,66 @@ app.post('/signup',
         }
       });
     } catch (error) {
-      console.error('Signup error:', error);
-      res.status(500).json({ error: 'Server error during signup' });
+      console.error('OTP verification error:', error);
+      res.status(500).json({ error: 'Server error during verification' });
+    }
+  }
+);
+
+// POST /resend-otp - Resend OTP for email verification
+app.post('/resend-otp',
+  [
+    body('email').isEmail().withMessage('Valid email is required'),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { email } = req.body;
+
+      // Find unverified user
+      const user = await User.findOne({ email, isEmailVerified: false });
+      if (!user) {
+        return res.status(400).json({ error: 'User not found or already verified' });
+      }
+
+      // Generate new OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      user.emailVerificationOTP = otp;
+      user.otpExpiry = otpExpiry;
+      await user.save();
+
+      // Send OTP email
+      if (transporter) {
+        await sendEmail(
+          email,
+          '🔐 GeniePay - New Verification OTP',
+          `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h1 style="color: #FF0044;">New Verification Code</h1>
+            <p>Hi <strong>${user.name}</strong>,</p>
+            <p>Here's your new verification code:</p>
+            <div style="background: #1a1a2e; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0;">
+              <p style="color: #00D9FF; font-size: 14px; margin: 0;">Your Verification Code:</p>
+              <h2 style="color: #fff; font-size: 36px; letter-spacing: 8px; margin: 10px 0;">${otp}</h2>
+            </div>
+            <p style="color: #FF0044;"><strong>This OTP will expire in 10 minutes.</strong></p>
+            <p>Best regards,<br><strong>GeniePay Team</strong></p>
+          </div>`
+        );
+      }
+
+      res.status(200).json({
+        message: 'New OTP sent to your email',
+        email: email
+      });
+    } catch (error) {
+      console.error('Resend OTP error:', error);
+      res.status(500).json({ error: 'Server error during OTP resend' });
     }
   }
 );
@@ -324,6 +488,15 @@ app.post('/login',
       const isMatch = await bcrypt.compare(password, user.password);
       if (!isMatch) {
         return res.status(400).json({ error: 'Invalid credentials' });
+      }
+
+      // Check if email is verified
+      if (!user.isEmailVerified) {
+        return res.status(403).json({ 
+          error: 'Please verify your email first',
+          requiresVerification: true,
+          email: user.email
+        });
       }
 
       // Generate JWT token
