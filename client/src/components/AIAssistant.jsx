@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Send, Bot, User, Loader } from 'lucide-react'
+import { X, Send, Bot, User, Loader, Mic, MicOff } from 'lucide-react'
 import { sendAICommand } from '../utils/api'
 
 export default function AIAssistant({ isOpen, onClose, onUpdate }) {
@@ -13,7 +13,56 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [isListening, setIsListening] = useState(false)
+  const [recognition, setRecognition] = useState(null)
   const messagesEndRef = useRef(null)
+
+  // Initialize Speech Recognition
+  useEffect(() => {
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+      const recognitionInstance = new SpeechRecognition()
+      
+      recognitionInstance.continuous = false
+      recognitionInstance.interimResults = false
+      recognitionInstance.lang = 'en-US'
+
+      recognitionInstance.onresult = (event) => {
+        const transcript = event.results[0][0].transcript
+        setInput(transcript)
+        setIsListening(false)
+      }
+
+      recognitionInstance.onerror = (event) => {
+        console.error('Speech recognition error:', event.error)
+        setIsListening(false)
+        if (event.error === 'not-allowed') {
+          alert('Microphone access denied. Please allow microphone access in your browser settings.')
+        }
+      }
+
+      recognitionInstance.onend = () => {
+        setIsListening(false)
+      }
+
+      setRecognition(recognitionInstance)
+    }
+  }, [])
+
+  const toggleVoiceInput = () => {
+    if (!recognition) {
+      alert('Voice input is not supported in your browser. Please use Chrome, Edge, or Safari.')
+      return
+    }
+
+    if (isListening) {
+      recognition.stop()
+      setIsListening(false)
+    } else {
+      recognition.start()
+      setIsListening(true)
+    }
+  }
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -97,24 +146,24 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="fixed right-0 top-0 h-full w-full sm:w-96 bg-thor-darker border-l border-thor-blue/30 z-50 flex flex-col"
+            className="fixed right-0 top-0 h-full w-full sm:w-[450px] md:w-[500px] lg:w-[550px] bg-thor-darker border-l border-thor-blue/30 z-50 flex flex-col"
           >
             {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-thor-blue/30">
+            <div className="flex items-center justify-between p-4 sm:p-5 md:p-6 border-b border-thor-blue/30">
               <div className="flex items-center gap-2">
-                <Bot className="w-6 h-6 text-thor-red" />
-                <h2 className="text-xl font-bold glow-text">AI Assistant</h2>
+                <Bot className="w-5 h-5 sm:w-6 sm:h-6 text-thor-red" />
+                <h2 className="text-lg sm:text-xl font-bold glow-text">AI Assistant</h2>
               </div>
               <button
                 onClick={onClose}
-                className="p-2 hover:bg-thor-red/20 rounded-lg transition-colors"
+                className="p-1.5 sm:p-2 hover:bg-thor-red/20 rounded-lg transition-colors"
               >
-                <X className="w-6 h-6" />
+                <X className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 space-y-4 scrollbar-hide">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 scrollbar-hide">
               {messages.map((message, index) => (
                 <motion.div
                   key={index}
@@ -125,7 +174,7 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
                   }`}
                 >
                   {/* Avatar */}
-                  <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+                  <div className={`flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center ${
                     message.role === 'user' 
                       ? 'bg-thor-blue/20' 
                       : message.isError
@@ -133,9 +182,9 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
                       : 'bg-thor-red/20'
                   }`}>
                     {message.role === 'user' ? (
-                      <User className="w-4 h-4 text-thor-blue" />
+                      <User className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-thor-blue" />
                     ) : (
-                      <Bot className="w-4 h-4 text-thor-red" />
+                      <Bot className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-thor-red" />
                     )}
                   </div>
 
@@ -145,7 +194,7 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
                   }`}>
                     {/* Only show text if not a list action, or if it's a list action with no subscriptions */}
                     {!(message.data?.action === 'list' && message.data?.subscriptions?.length > 0) && (
-                      <div className={`inline-block px-4 py-2 rounded-lg max-w-full ${
+                      <div className={`inline-block px-3 py-2 sm:px-4 sm:py-2 rounded-lg max-w-full text-sm sm:text-base ${
                         message.role === 'user'
                           ? 'bg-thor-blue/20 text-white'
                           : message.isError
@@ -158,25 +207,25 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
                     
                     {/* Display subscriptions in table format if available */}
                     {message.data?.subscriptions && message.data.subscriptions.length > 0 && (
-                      <div className="mt-3 bg-thor-dark/50 rounded-lg overflow-hidden text-left">
+                      <div className="mt-2 sm:mt-3 bg-thor-dark/50 rounded-lg overflow-hidden text-left">
                         {/* Table for multiple subscriptions - scrollable independently without scrollbar */}
-                        <div className="overflow-x-auto overflow-y-visible p-3 scrollbar-hide">
-                          <table className="w-full text-sm min-w-[500px]">
+                        <div className="overflow-x-auto overflow-y-visible p-2 sm:p-3 scrollbar-hide">
+                          <table className="w-full text-xs sm:text-sm min-w-[400px] sm:min-w-[500px]">
                             <thead>
                               <tr className="border-b border-thor-blue/30">
-                                <th className="text-left py-2 px-2 text-thor-blue whitespace-nowrap">Service</th>
-                                <th className="text-left py-2 px-2 text-thor-blue whitespace-nowrap">Price</th>
-                                <th className="text-left py-2 px-2 text-thor-blue whitespace-nowrap">Status</th>
-                                <th className="text-left py-2 px-2 text-thor-blue whitespace-nowrap">Renewal</th>
+                                <th className="text-left py-2 px-1 sm:px-2 text-thor-blue whitespace-nowrap">Service</th>
+                                <th className="text-left py-2 px-1 sm:px-2 text-thor-blue whitespace-nowrap">Price</th>
+                                <th className="text-left py-2 px-1 sm:px-2 text-thor-blue whitespace-nowrap">Status</th>
+                                <th className="text-left py-2 px-1 sm:px-2 text-thor-blue whitespace-nowrap">Renewal</th>
                               </tr>
                             </thead>
                             <tbody>
                               {message.data.subscriptions.map((sub, idx) => (
                                 <tr key={idx} className="border-b border-gray-700/50 hover:bg-thor-blue/5">
-                                  <td className="py-2 px-2 font-medium whitespace-nowrap">{sub.serviceName}</td>
-                                  <td className="py-2 px-2 whitespace-nowrap">₹{sub.price}</td>
-                                  <td className="py-2 px-2 whitespace-nowrap">
-                                    <span className={`px-2 py-1 rounded text-xs ${
+                                  <td className="py-2 px-1 sm:px-2 font-medium whitespace-nowrap">{sub.serviceName}</td>
+                                  <td className="py-2 px-1 sm:px-2 whitespace-nowrap">₹{sub.price}</td>
+                                  <td className="py-2 px-1 sm:px-2 whitespace-nowrap">
+                                    <span className={`px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-xs ${
                                       sub.status === 'active' 
                                         ? 'bg-green-500/20 text-green-400' 
                                         : sub.status === 'paused'
@@ -186,7 +235,7 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
                                       {sub.status}
                                     </span>
                                   </td>
-                                  <td className="py-2 px-2 text-gray-400 whitespace-nowrap">
+                                  <td className="py-2 px-1 sm:px-2 text-gray-400 whitespace-nowrap text-xs sm:text-sm">
                                     {new Date(sub.renewalDate).toLocaleDateString()}
                                   </td>
                                 </tr>
@@ -197,9 +246,9 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
                         
                         {/* Total spending */}
                         {message.data.totalSpending !== undefined && (
-                          <div className="mt-3 pt-3 border-t border-thor-blue/30 flex justify-between items-center">
+                          <div className="mt-2 sm:mt-3 pt-2 sm:pt-3 px-2 sm:px-3 border-t border-thor-blue/30 flex justify-between items-center text-sm sm:text-base">
                             <span className="text-gray-400">Total Monthly Spending:</span>
-                            <span className="text-lg font-bold text-thor-red">₹{message.data.totalSpending}</span>
+                            <span className="text-base sm:text-lg font-bold text-thor-red">₹{message.data.totalSpending}</span>
                           </div>
                         )}
                       </div>
@@ -215,10 +264,10 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
                   animate={{ opacity: 1 }}
                   className="flex gap-3"
                 >
-                  <div className="w-8 h-8 rounded-full bg-thor-red/20 flex items-center justify-center">
-                    <Bot className="w-4 h-4 text-thor-red" />
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-thor-red/20 flex items-center justify-center">
+                    <Bot className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-thor-red" />
                   </div>
-                  <div className="bg-thor-dark px-4 py-2 rounded-lg">
+                  <div className="bg-thor-dark px-3 py-2 sm:px-4 sm:py-2 rounded-lg">
                     <div className="flex gap-2">
                       <div className="w-2 h-2 bg-thor-red rounded-full animate-bounce"></div>
                       <div className="w-2 h-2 bg-thor-blue rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
@@ -232,41 +281,62 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
             </div>
 
             {/* Input */}
-            <div className="p-6 border-t border-thor-blue/30">
-              <form onSubmit={handleSubmit} className="flex gap-2">
+            <div className="p-3 sm:p-4 md:p-6 border-t border-thor-blue/30">
+              <form onSubmit={handleSubmit} className="flex gap-1.5 sm:gap-2">
                 <input
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Type a command..."
-                  className="flex-1"
+                  placeholder={isListening ? "Listening..." : "Type a command or use voice..."}
+                  className="flex-1 text-sm sm:text-base"
                   disabled={loading}
                 />
+                
+                {/* Voice Input Button */}
+                <button
+                  type="button"
+                  onClick={toggleVoiceInput}
+                  disabled={loading}
+                  className={`px-2.5 sm:px-3 md:px-4 py-2 rounded-lg transition-all ${
+                    isListening 
+                      ? 'bg-thor-red text-white animate-pulse' 
+                      : 'bg-thor-blue/20 hover:bg-thor-blue/30 text-thor-blue'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  title={isListening ? "Stop recording" : "Start voice input"}
+                >
+                  {isListening ? (
+                    <MicOff className="w-4 h-4 sm:w-5 sm:h-5" />
+                  ) : (
+                    <Mic className="w-4 h-4 sm:w-5 sm:h-5" />
+                  )}
+                </button>
+
+                {/* Send Button */}
                 <button
                   type="submit"
                   disabled={loading || !input.trim()}
-                  className="thor-button px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="thor-button px-2.5 sm:px-3 md:px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loading ? (
-                    <Loader className="w-5 h-5 animate-spin" />
+                    <Loader className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
                   ) : (
-                    <Send className="w-5 h-5" />
+                    <Send className="w-4 h-4 sm:w-5 sm:h-5" />
                   )}
                 </button>
               </form>
 
               {/* Quick Commands */}
-              <div className="mt-4 flex flex-wrap gap-2">
+              <div className="mt-3 sm:mt-4 flex flex-wrap gap-1.5 sm:gap-2">
                 <button
                   onClick={() => setInput('Show my total spending')}
-                  className="text-xs px-3 py-1 bg-thor-dark hover:bg-thor-blue/20 rounded-full transition-colors"
+                  className="text-xs px-2 sm:px-3 py-1 bg-thor-dark hover:bg-thor-blue/20 rounded-full transition-colors"
                   disabled={loading}
                 >
                   Show spending
                 </button>
                 <button
                   onClick={() => setInput('List all subscriptions')}
-                  className="text-xs px-3 py-1 bg-thor-dark hover:bg-thor-blue/20 rounded-full transition-colors"
+                  className="text-xs px-2 sm:px-3 py-1 bg-thor-dark hover:bg-thor-blue/20 rounded-full transition-colors"
                   disabled={loading}
                 >
                   List all
