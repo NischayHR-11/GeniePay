@@ -114,7 +114,7 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 space-y-4">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 space-y-4 scrollbar-hide">
               {messages.map((message, index) => (
                 <motion.div
                   key={index}
