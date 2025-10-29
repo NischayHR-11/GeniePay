@@ -4,6 +4,28 @@ import { X, Send, Bot, User, Loader, Mic, MicOff } from 'lucide-react'
 import { sendAICommand } from '../utils/api'
 
 export default function AIAssistant({ isOpen, onClose, onUpdate }) {
+  // Add custom CSS for sound wave animation
+  useEffect(() => {
+    const style = document.createElement('style')
+    style.textContent = `
+      @keyframes soundWave {
+        0%, 100% { transform: scaleY(0.3); }
+        50% { transform: scaleY(1); }
+      }
+      .sound-wave {
+        animation: soundWave 0.8s ease-in-out infinite;
+        transform-origin: center;
+      }
+      .sound-wave-1 { animation-delay: 0s; }
+      .sound-wave-2 { animation-delay: 0.1s; }
+      .sound-wave-3 { animation-delay: 0.2s; }
+      .sound-wave-4 { animation-delay: 0.3s; }
+      .sound-wave-5 { animation-delay: 0.4s; }
+      .sound-wave-6 { animation-delay: 0.5s; }
+    `
+    document.head.appendChild(style)
+    return () => document.head.removeChild(style)
+  }, [])
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
@@ -272,6 +294,41 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
                       <div className="w-2 h-2 bg-thor-red rounded-full animate-bounce"></div>
                       <div className="w-2 h-2 bg-thor-blue rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
                       <div className="w-2 h-2 bg-thor-red rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Listening Animation */}
+              {isListening && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  className="flex gap-3 items-center"
+                >
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-thor-red/30 to-thor-blue/30 flex items-center justify-center relative">
+                    <Mic className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-thor-red z-10" />
+                    {/* Pulsing ring effect */}
+                    <div className="absolute inset-0 rounded-full bg-thor-red/20 animate-ping"></div>
+                    <div className="absolute inset-0 rounded-full bg-thor-blue/10 animate-pulse"></div>
+                  </div>
+                  <div className="bg-gradient-to-r from-thor-red/10 via-thor-blue/10 to-thor-red/10 px-3 py-2 sm:px-4 sm:py-2 rounded-lg border border-thor-red/20 backdrop-blur-sm">
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-end gap-0.5 h-8">
+                        {/* Thor-themed sound wave bars */}
+                        <div className="w-1 bg-gradient-to-t from-thor-red to-thor-red/60 rounded-full sound-wave sound-wave-1" style={{ height: '12px' }}></div>
+                        <div className="w-1 bg-gradient-to-t from-thor-blue to-thor-blue/60 rounded-full sound-wave sound-wave-2" style={{ height: '20px' }}></div>
+                        <div className="w-1 bg-gradient-to-t from-thor-red to-thor-red/60 rounded-full sound-wave sound-wave-3" style={{ height: '16px' }}></div>
+                        <div className="w-1 bg-gradient-to-t from-thor-blue to-thor-blue/60 rounded-full sound-wave sound-wave-4" style={{ height: '24px' }}></div>
+                        <div className="w-1 bg-gradient-to-t from-thor-red to-thor-red/60 rounded-full sound-wave sound-wave-5" style={{ height: '14px' }}></div>
+                        <div className="w-1 bg-gradient-to-t from-thor-blue to-thor-blue/60 rounded-full sound-wave sound-wave-6" style={{ height: '18px' }}></div>
+                        <div className="w-1 bg-gradient-to-t from-thor-red to-thor-red/60 rounded-full sound-wave sound-wave-1" style={{ height: '22px' }}></div>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-xs sm:text-sm text-thor-red font-medium">Listening...</span>
+                        <span className="text-xs text-gray-400">Speak your command</span>
+                      </div>
                     </div>
                   </div>
                 </motion.div>
