@@ -83,6 +83,10 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
     } else {
       recognition.start()
       setIsListening(true)
+      // Scroll to bottom when listening starts to show the full animation
+      setTimeout(() => {
+        scrollToBottom()
+      }, 100)
     }
   }
 
@@ -93,6 +97,15 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  // Scroll to bottom when listening animation appears
+  useEffect(() => {
+    if (isListening) {
+      setTimeout(() => {
+        scrollToBottom()
+      }, 200) // Small delay to ensure animation is rendered
+    }
+  }, [isListening])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -299,35 +312,45 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
                 </motion.div>
               )}
 
-              {/* Listening Animation */}
+              {/* Listening Animation - Centered */}
               {isListening && (
                 <motion.div
                   initial={{ opacity: 0, scale: 0.8 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.8 }}
-                  className="flex gap-3 items-center"
+                  className="flex justify-center items-center py-8 mb-6"
                 >
-                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-thor-red/30 to-thor-blue/30 flex items-center justify-center relative">
-                    <Mic className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-thor-red z-10" />
-                    {/* Pulsing ring effect */}
-                    <div className="absolute inset-0 rounded-full bg-thor-red/20 animate-ping"></div>
-                    <div className="absolute inset-0 rounded-full bg-thor-blue/10 animate-pulse"></div>
-                  </div>
-                  <div className="bg-gradient-to-r from-thor-red/10 via-thor-blue/10 to-thor-red/10 px-3 py-2 sm:px-4 sm:py-2 rounded-lg border border-thor-red/20 backdrop-blur-sm">
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-end gap-0.5 h-8">
-                        {/* Thor-themed sound wave bars */}
-                        <div className="w-1 bg-gradient-to-t from-thor-red to-thor-red/60 rounded-full sound-wave sound-wave-1" style={{ height: '12px' }}></div>
-                        <div className="w-1 bg-gradient-to-t from-thor-blue to-thor-blue/60 rounded-full sound-wave sound-wave-2" style={{ height: '20px' }}></div>
-                        <div className="w-1 bg-gradient-to-t from-thor-red to-thor-red/60 rounded-full sound-wave sound-wave-3" style={{ height: '16px' }}></div>
-                        <div className="w-1 bg-gradient-to-t from-thor-blue to-thor-blue/60 rounded-full sound-wave sound-wave-4" style={{ height: '24px' }}></div>
-                        <div className="w-1 bg-gradient-to-t from-thor-red to-thor-red/60 rounded-full sound-wave sound-wave-5" style={{ height: '14px' }}></div>
-                        <div className="w-1 bg-gradient-to-t from-thor-blue to-thor-blue/60 rounded-full sound-wave sound-wave-6" style={{ height: '18px' }}></div>
-                        <div className="w-1 bg-gradient-to-t from-thor-red to-thor-red/60 rounded-full sound-wave sound-wave-1" style={{ height: '22px' }}></div>
+                  <div className="flex flex-col items-center gap-4">
+                    {/* Microphone with pulsing rings */}
+                    <div className="relative">
+                      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-thor-red/30 to-thor-blue/30 flex items-center justify-center relative">
+                        <Mic className="w-8 h-8 sm:w-10 sm:h-10 text-thor-red z-10" />
+                        {/* Multiple pulsing ring effects */}
+                        <div className="absolute inset-0 rounded-full bg-thor-red/20 animate-ping"></div>
+                        <div className="absolute inset-0 rounded-full bg-thor-blue/10 animate-pulse"></div>
+                        <div className="absolute -inset-2 rounded-full bg-thor-red/10 animate-ping" style={{ animationDelay: '0.5s' }}></div>
                       </div>
-                      <div className="flex flex-col">
-                        <span className="text-xs sm:text-sm text-thor-red font-medium">Listening...</span>
-                        <span className="text-xs text-gray-400">Speak your command</span>
+                    </div>
+                    
+                    {/* Sound wave visualization */}
+                    <div className="bg-gradient-to-r from-thor-red/10 via-thor-blue/10 to-thor-red/10 px-6 py-4 rounded-xl border border-thor-red/20 backdrop-blur-sm">
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="flex items-end gap-1 h-10">
+                          {/* Thor-themed sound wave bars */}
+                          <div className="w-1.5 bg-gradient-to-t from-thor-red to-thor-red/60 rounded-full sound-wave sound-wave-1" style={{ height: '16px' }}></div>
+                          <div className="w-1.5 bg-gradient-to-t from-thor-blue to-thor-blue/60 rounded-full sound-wave sound-wave-2" style={{ height: '28px' }}></div>
+                          <div className="w-1.5 bg-gradient-to-t from-thor-red to-thor-red/60 rounded-full sound-wave sound-wave-3" style={{ height: '20px' }}></div>
+                          <div className="w-1.5 bg-gradient-to-t from-thor-blue to-thor-blue/60 rounded-full sound-wave sound-wave-4" style={{ height: '32px' }}></div>
+                          <div className="w-1.5 bg-gradient-to-t from-thor-red to-thor-red/60 rounded-full sound-wave sound-wave-5" style={{ height: '18px' }}></div>
+                          <div className="w-1.5 bg-gradient-to-t from-thor-blue to-thor-blue/60 rounded-full sound-wave sound-wave-6" style={{ height: '24px' }}></div>
+                          <div className="w-1.5 bg-gradient-to-t from-thor-red to-thor-red/60 rounded-full sound-wave sound-wave-1" style={{ height: '26px' }}></div>
+                          <div className="w-1.5 bg-gradient-to-t from-thor-blue to-thor-blue/60 rounded-full sound-wave sound-wave-2" style={{ height: '14px' }}></div>
+                          <div className="w-1.5 bg-gradient-to-t from-thor-red to-thor-red/60 rounded-full sound-wave sound-wave-3" style={{ height: '30px' }}></div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-sm sm:text-base text-thor-red font-medium mb-1">Listening...</div>
+                          <div className="text-xs text-gray-400">Speak your command clearly</div>
+                        </div>
                       </div>
                     </div>
                   </div>
