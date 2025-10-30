@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import SimpleBackground from '../components/SimpleBackground'
 import SubscriptionCard from '../components/SubscriptionCard'
-import AddSubscriptionModal from '../components/AddSubscriptionModal'
+import EnhancedAddSubscriptionModal from '../components/EnhancedAddSubscriptionModal'
 import AIAssistant from '../components/AIAssistant'
 import SpendingChart from '../components/SpendingChart'
 import {
@@ -293,8 +293,8 @@ export default function Dashboard() {
         )}
       </main>
 
-      {/* Add Subscription Modal */}
-      <AddSubscriptionModal
+      {/* Enhanced Add Subscription Modal with Real Service Integration */}
+      <EnhancedAddSubscriptionModal
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
         onSuccess={fetchSubscriptions}

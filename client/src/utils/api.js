@@ -39,11 +39,12 @@ export const getSubscriptions = async () => {
   return response.data
 }
 
-export const addSubscription = async (serviceName, price, renewalDate) => {
+export const addSubscription = async (serviceName, price, renewalDate, isConnected = false) => {
   const response = await api.post('/subscriptions/add', {
     serviceName,
     price,
     renewalDate,
+    isConnected,
   })
   return response.data
 }
@@ -81,6 +82,25 @@ export const executeBlockchainTransaction = async (action, subscriptionId, amoun
 // Notification APIs
 export const sendNotification = async (type, subscriptionId) => {
   const response = await api.post('/notify', { type, subscriptionId })
+  return response.data
+}
+
+// Real Service Integration APIs
+export const connectRealService = async (serviceKey, options = {}) => {
+  const response = await api.post('/api/services/connect', {
+    serviceKey,
+    returnUrl: options.returnUrl || window.location.href
+  })
+  return response.data
+}
+
+export const getServiceSubscriptionDetails = async (serviceKey) => {
+  const response = await api.get(`/api/services/${serviceKey}/subscription`)
+  return response.data
+}
+
+export const automateServicePayment = async (serviceKey, amount) => {
+  const response = await api.post(`/api/services/${serviceKey}/payment`, { amount })
   return response.data
 }
 

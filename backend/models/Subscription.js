@@ -28,6 +28,10 @@ const subscriptionSchema = new mongoose.Schema({
     enum: ['active', 'paused', 'cancelled'],
     default: 'active'
   },
+  isConnected: {
+    type: Boolean,
+    default: false
+  },
   createdAt: {
     type: Date,
     default: Date.now

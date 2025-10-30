@@ -638,14 +638,15 @@ app.post('/subscriptions/add',
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { serviceName, price, renewalDate } = req.body;
+      const { serviceName, price, renewalDate, isConnected } = req.body;
 
       const subscription = new Subscription({
         userId: req.user.id,
         serviceName,
         price,
         renewalDate: new Date(renewalDate),
-        status: 'active'
+        status: 'active',
+        isConnected: isConnected || false
       });
 
       await subscription.save();
@@ -1297,6 +1298,149 @@ app.post('/notify', authenticateToken, async (req, res) => {
 
 // ========================================
 // Error Handling Middleware
+// ========================================
+// Real Service Integration Routes
+// ========================================
+const RealServiceIntegrator = require('./services/RealServiceIntegrator');
+
+// POST /api/services/connect - Initiate connection to real service
+app.post('/api/services/connect', authenticateToken, async (req, res) => {
+  try {
+    const { serviceKey, returnUrl } = req.body;
+    
+    if (!serviceKey) {
+      return res.status(400).json({ error: 'Service key is required' });
+    }
+
+    const result = await RealServiceIntegrator.initiateConnection(
+      serviceKey, 
+      req.user.id, 
+      returnUrl || `${process.env.CLIENT_URL}/dashboard`
+    );
+
+    res.json(result);
+  } catch (error) {
+    console.error('Service connection error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/oauth/callback/:service - Handle OAuth callbacks
+app.get('/api/oauth/callback/:service', async (req, res) => {
+  try {
+    const { service } = req.params;
+    const { code, state, error } = req.query;
+
+    if (error) {
+      return res.redirect(`${process.env.CLIENT_URL}/dashboard?error=${encodeURIComponent(error)}`);
+    }
+
+    if (!code || !state) {
+      return res.redirect(`${process.env.CLIENT_URL}/dashboard?error=missing_params`);
+    }
+
+    // Extract user ID from state (in production, store this properly)
+    // For now, we'll need to handle this differently
+    const result = await RealServiceIntegrator.handleOAuthCallback(
+      service, 
+      code, 
+      state, 
+      'user_id_from_state' // This needs proper implementation
+    );
+
+    res.redirect(`${process.env.CLIENT_URL}/dashboard?connected=${service}&success=true`);
+  } catch (error) {
+    console.error('OAuth callback error:', error);
+    res.redirect(`${process.env.CLIENT_URL}/dashboard?error=${encodeURIComponent(error.message)}`);
+  }
+});
+
+// GET /api/services/:service/subscription - Get subscription details from connected service
+app.get('/api/services/:service/subscription', authenticateToken, async (req, res) => {
+  try {
+    const { service } = req.params;
+    
+    const subscriptionDetails = await RealServiceIntegrator.getSubscriptionDetails(
+      service, 
+      req.user.id
+    );
+
+    res.json(subscriptionDetails);
+  } catch (error) {
+    console.error('Get subscription details error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/services/:service/payment - Automate payment for connected service
+app.post('/api/services/:service/payment', authenticateToken, async (req, res) => {
+  try {
+    const { service } = req.params;
+    const { amount } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: 'Valid amount is required' });
+    }
+
+    const paymentResult = await RealServiceIntegrator.automatePayment(
+      service,
+      req.user.id,
+      amount
+    );
+
+    res.json(paymentResult);
+  } catch (error) {
+    console.error('Automated payment error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/webhooks/:service - Handle webhooks from services
+app.post('/api/webhooks/:service', async (req, res) => {
+  try {
+    const { service } = req.params;
+    const webhookData = req.body;
+
+    console.log(`Received webhook from ${service}:`, webhookData);
+
+    // Process webhook based on service
+    switch (service) {
+      case 'spotify':
+        await handleSpotifyWebhook(webhookData);
+        break;
+      case 'discord':
+        await handleDiscordWebhook(webhookData);
+        break;
+      case 'github':
+        await handleGitHubWebhook(webhookData);
+        break;
+      default:
+        console.log(`Unknown webhook service: ${service}`);
+    }
+
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error('Webhook processing error:', error);
+    res.status(500).json({ error: 'Webhook processing failed' });
+  }
+});
+
+// Webhook handlers
+async function handleSpotifyWebhook(data) {
+  // Handle Spotify subscription changes
+  console.log('Processing Spotify webhook:', data);
+}
+
+async function handleDiscordWebhook(data) {
+  // Handle Discord subscription changes
+  console.log('Processing Discord webhook:', data);
+}
+
+async function handleGitHubWebhook(data) {
+  // Handle GitHub subscription changes
+  console.log('Processing GitHub webhook:', data);
+}
+
 // ========================================
 app.use((err, req, res, next) => {
   console.error('Server error:', err);
