@@ -33,6 +33,23 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  phone: {
+    type: String,
+    default: null,
+    sparse: true  // Allows multiple null values
+  },
+  phoneVerified: {
+    type: Boolean,
+    default: false
+  },
+  phoneOTP: {
+    type: String,
+    default: null
+  },
+  phoneOTPExpiry: {
+    type: Date,
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now

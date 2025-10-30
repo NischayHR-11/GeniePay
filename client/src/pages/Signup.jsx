@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Link, useNavigate } from 'react-router-dom'
-import { Zap, Mail, Lock, User, Wallet, Loader, Shield } from 'lucide-react'
+import { Zap, Mail, Lock, User, Wallet, Loader, Shield, Phone } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { connectWallet } from '../utils/web3'
 import SimpleBackground from '../components/SimpleBackground'
@@ -9,8 +9,8 @@ import SimpleBackground from '../components/SimpleBackground'
 export default function Signup() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
   const [walletAddress, setWalletAddress] = useState('')
   const [otp, setOtp] = useState('')
   const [error, setError] = useState('')
@@ -34,11 +34,6 @@ export default function Signup() {
     setError('')
 
     // Validation
-    if (password !== confirmPassword) {
-      setError('Passwords do not match')
-      return
-    }
-
     if (password.length < 6) {
       setError('Password must be at least 6 characters')
       return
@@ -46,7 +41,7 @@ export default function Signup() {
 
     setLoading(true)
 
-    const result = await signup(name, email, password, walletAddress)
+    const result = await signup(name, email, password, walletAddress, phone)
 
     if (result.success) {
       if (result.requiresVerification) {
@@ -188,10 +183,41 @@ export default function Signup() {
               </div>
             </div>
 
+            {/* Phone Number */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Phone Number <span className="text-gray-500 text-xs">(Optional - for OTP login)</span>
+              </label>
+              <div className="relative">
+                <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => {
+                    // Only allow digits and limit to 10
+                    const value = e.target.value.replace(/\D/g, '').slice(0, 10)
+                    setPhone(value)
+                  }}
+                  placeholder="10-digit mobile number"
+                  className="w-full pl-12 pr-4 py-3"
+                />
+              </div>
+              {phone && phone.length < 10 && (
+                <p className="text-xs text-gray-500 mt-1">
+                  {10 - phone.length} more digits needed
+                </p>
+              )}
+              {phone && phone.length === 10 && (
+                <p className="text-xs text-green-500 mt-1">
+                  ✓ Valid phone number
+                </p>
+              )}
+            </div>
+
             {/* Password */}
             <div>
               <label className="block text-sm font-medium mb-2">
-                Password
+                Password <span className="text-gray-500 text-xs">(min. 6 characters)</span>
               </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -199,24 +225,6 @@ export default function Signup() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-12 pr-4 py-3"
-                  required
-                />
-              </div>
-            </div>
-
-            {/* Confirm Password */}
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Confirm Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="••••••••"
                   className="w-full pl-12 pr-4 py-3"
                   required

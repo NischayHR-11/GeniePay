@@ -295,6 +295,15 @@ app.post('/signup',
     body('name').trim().notEmpty().withMessage('Name is required'),
     body('email').isEmail().withMessage('Valid email is required'),
     body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+    body('phone').optional().custom((value) => {
+      if (value) {
+        const { isValidPhoneNumber } = require('./utils/sms');
+        if (!isValidPhoneNumber(value)) {
+          throw new Error('Invalid phone number format');
+        }
+      }
+      return true;
+    })
   ],
   async (req, res) => {
     try {
@@ -303,7 +312,7 @@ app.post('/signup',
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { name, email, password, walletAddress } = req.body;
+      const { name, email, password, walletAddress, phone } = req.body;
 
       // Check if user already exists
       const existingUser = await User.findOne({ email });
@@ -320,6 +329,13 @@ app.post('/signup',
           
           existingUser.emailVerificationOTP = otp;
           existingUser.otpExpiry = otpExpiry;
+          
+          // Update phone if provided
+          if (phone) {
+            const { formatPhoneNumber } = require('./utils/sms');
+            existingUser.phone = formatPhoneNumber(phone);
+          }
+          
           await existingUser.save();
 
           // Send OTP email
@@ -355,12 +371,20 @@ app.post('/signup',
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
 
+      // Format phone number if provided
+      let formattedPhone = null;
+      if (phone) {
+        const { formatPhoneNumber } = require('./utils/sms');
+        formattedPhone = formatPhoneNumber(phone);
+      }
+
       // Create new unverified user
       const user = new User({
         name,
         email,
         password: hashedPassword,
         walletAddress: walletAddress || null,
+        phone: formattedPhone,
         emailVerificationOTP: otp,
         otpExpiry: otpExpiry,
         isEmailVerified: false
@@ -594,6 +618,189 @@ app.post('/login',
     } catch (error) {
       console.error('Login error:', error);
       res.status(500).json({ error: 'Server error during login' });
+    }
+  }
+);
+
+// ========================================
+// Phone OTP Login Routes
+// ========================================
+const { sendSMS, generateOTP, formatPhoneNumber, isValidPhoneNumber } = require('./utils/sms');
+
+// POST /auth/phone-login - Request OTP for phone login
+app.post('/auth/phone-login',
+  [
+    body('phone').notEmpty().withMessage('Phone number is required'),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      let { phone } = req.body;
+
+      // Validate phone number format
+      if (!isValidPhoneNumber(phone)) {
+        return res.status(400).json({ 
+          error: 'Invalid phone number. Please enter a valid Indian mobile number (10 digits)' 
+        });
+      }
+
+      // Format phone number
+      phone = formatPhoneNumber(phone);
+
+      // Check if user exists with this phone number
+      const user = await User.findOne({ phone });
+      if (!user) {
+        return res.status(404).json({ 
+          error: 'Phone number not registered. Please sign up first.',
+          notRegistered: true
+        });
+      }
+
+      // Generate 6-digit OTP
+      const otp = generateOTP();
+      const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      // Save OTP to database
+      user.phoneOTP = otp;
+      user.phoneOTPExpiry = otpExpiry;
+      await user.save();
+
+      // Send OTP via SMS
+      const message = `Your GeniePay OTP is: ${otp}. Valid for 10 minutes. Do not share with anyone.`;
+      await sendSMS(phone, message);
+
+      console.log(`📱 OTP sent to ${phone}: ${otp}`);
+
+      res.json({
+        message: 'OTP sent successfully to your phone',
+        phone: phone.replace(/(\+\d{2})(\d{5})(\d{5})/, '$1 XXXXX $3'), // Mask middle digits
+        otpSent: true
+      });
+    } catch (error) {
+      console.error('Phone login OTP error:', error);
+      res.status(500).json({ error: 'Failed to send OTP. Please try again.' });
+    }
+  }
+);
+
+// POST /auth/verify-phone-otp - Verify OTP and login
+app.post('/auth/verify-phone-otp',
+  [
+    body('phone').notEmpty().withMessage('Phone number is required'),
+    body('otp').isLength({ min: 6, max: 6 }).withMessage('OTP must be 6 digits'),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      let { phone, otp } = req.body;
+
+      // Format phone number
+      phone = formatPhoneNumber(phone);
+
+      // Find user
+      const user = await User.findOne({ phone });
+      if (!user) {
+        return res.status(400).json({ error: 'Phone number not found' });
+      }
+
+      // Check if OTP exists
+      if (!user.phoneOTP) {
+        return res.status(400).json({ error: 'No OTP found. Please request a new OTP.' });
+      }
+
+      // Check if OTP has expired
+      if (user.phoneOTPExpiry < new Date()) {
+        user.phoneOTP = null;
+        user.phoneOTPExpiry = null;
+        await user.save();
+        return res.status(400).json({ error: 'OTP has expired. Please request a new one.' });
+      }
+
+      // Verify OTP
+      if (user.phoneOTP !== otp) {
+        return res.status(400).json({ error: 'Invalid OTP. Please try again.' });
+      }
+
+      // OTP is valid - mark phone as verified and clear OTP
+      user.phoneVerified = true;
+      user.phoneOTP = null;
+      user.phoneOTPExpiry = null;
+      await user.save();
+
+      // Generate JWT token
+      const token = generateToken(user._id, user.email);
+
+      console.log(`✅ Phone login successful for ${phone}`);
+
+      res.json({
+        message: 'Login successful',
+        token,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          walletAddress: user.walletAddress
+        }
+      });
+    } catch (error) {
+      console.error('Phone OTP verification error:', error);
+      res.status(500).json({ error: 'Failed to verify OTP. Please try again.' });
+    }
+  }
+);
+
+// POST /auth/resend-phone-otp - Resend OTP
+app.post('/auth/resend-phone-otp',
+  [
+    body('phone').notEmpty().withMessage('Phone number is required'),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      let { phone } = req.body;
+      phone = formatPhoneNumber(phone);
+
+      // Find user
+      const user = await User.findOne({ phone });
+      if (!user) {
+        return res.status(404).json({ error: 'Phone number not registered' });
+      }
+
+      // Generate new OTP
+      const otp = generateOTP();
+      const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+      // Save OTP
+      user.phoneOTP = otp;
+      user.phoneOTPExpiry = otpExpiry;
+      await user.save();
+
+      // Send OTP
+      const message = `Your GeniePay OTP is: ${otp}. Valid for 10 minutes. Do not share with anyone.`;
+      await sendSMS(phone, message);
+
+      console.log(`📱 OTP resent to ${phone}: ${otp}`);
+
+      res.json({
+        message: 'OTP resent successfully',
+        otpSent: true
+      });
+    } catch (error) {
+      console.error('Resend OTP error:', error);
+      res.status(500).json({ error: 'Failed to resend OTP' });
     }
   }
 );

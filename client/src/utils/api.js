@@ -28,8 +28,15 @@ export const loginUser = async (email, password) => {
   return response.data
 }
 
-export const signupUser = async (name, email, password, walletAddress) => {
-  const response = await api.post('/signup', { name, email, password, walletAddress })
+export const signupUser = async (name, email, password, walletAddress, phone) => {
+  const payload = { name, email, password, walletAddress }
+  
+  // Only add phone if it's provided and valid (10 digits)
+  if (phone && phone.length === 10) {
+    payload.phone = phone
+  }
+  
+  const response = await api.post('/signup', payload)
   return response.data
 }
 

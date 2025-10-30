@@ -26,12 +26,14 @@
     "ethers": "^6.9.2",
     "express": "^4.18.2",
     "express-validator": "^7.0.1",
+    "firebase-admin": "^13.5.0",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.0.3",
     "nodemailer": "^6.9.7",
     "openai": "^4.24.1",
     "resend": "^6.3.0",
+    "twilio": "^5.10.4",
     "web3": "^4.3.0"
   },
   "devDependencies": {

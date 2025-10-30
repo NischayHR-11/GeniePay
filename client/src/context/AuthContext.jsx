@@ -51,9 +51,9 @@ export const AuthProvider = ({ children }) => {
     }
   }
 
-  const signup = async (name, email, password, walletAddress) => {
+  const signup = async (name, email, password, walletAddress, phone) => {
     try {
-      const response = await signupUser(name, email, password, walletAddress)
+      const response = await signupUser(name, email, password, walletAddress, phone)
       
       // Check if OTP verification is required
       if (response.requiresVerification) {
