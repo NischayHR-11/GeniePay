@@ -49,10 +49,63 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
       recognitionInstance.interimResults = false
       recognitionInstance.lang = 'en-US'
 
-      recognitionInstance.onresult = (event) => {
+      recognitionInstance.onresult = async (event) => {
         const transcript = event.results[0][0].transcript
         setInput(transcript)
         setIsListening(false)
+        
+        // Automatically send the message after speech recognition
+        if (transcript.trim()) {
+          const userMessage = {
+            role: 'user',
+            content: transcript,
+            timestamp: new Date()
+          }
+
+          setMessages(prev => [...prev, userMessage])
+          setInput('')
+          setLoading(true)
+
+          try {
+            // Get last 5 messages for context (excluding the welcome message)
+            const recentMessages = messages
+              .slice(-5)
+              .filter(msg => msg.role === 'user' || msg.role === 'assistant')
+              .map(msg => ({
+                role: msg.role,
+                content: msg.content
+              }))
+            
+            // Add current message
+            recentMessages.push({ role: 'user', content: transcript })
+            
+            const response = await sendAICommand(transcript, recentMessages)
+            
+            const aiMessage = {
+              role: 'assistant',
+              content: response.response || 'Command executed successfully!',
+              timestamp: new Date(),
+              data: response
+            }
+
+            setMessages(prev => [...prev, aiMessage])
+
+            // Refresh subscriptions if action was performed
+            if (['add', 'bulkAdd', 'delete', 'pause', 'resume', 'list', 'analytics', 'bulk'].includes(response.action)) {
+              onUpdate()
+            }
+          } catch (error) {
+            const errorMessage = {
+              role: 'assistant',
+              content: 'Sorry, I encountered an error processing your request. Please try again.',
+              timestamp: new Date(),
+              isError: true
+            }
+            setMessages(prev => [...prev, errorMessage])
+          } finally {
+            setLoading(false)
+          }
+        }
       }
 
       recognitionInstance.onerror = (event) => {
@@ -69,7 +122,7 @@ export default function AIAssistant({ isOpen, onClose, onUpdate }) {
 
       setRecognition(recognitionInstance)
     }
-  }, [])
+  }, [messages, onUpdate])
 
   const toggleVoiceInput = () => {
     if (!recognition) {
