@@ -925,59 +925,71 @@ app.post('/subscriptions/add',
           <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <meta name="color-scheme" content="dark">
+            <meta name="supported-color-schemes" content="dark">
             <title>Subscription Confirmation</title>
+            <style>
+              /* Force dark mode */
+              :root {
+                color-scheme: dark;
+                supported-color-schemes: dark;
+              }
+              body {
+                background-color: #0a0a0a !important;
+              }
+            </style>
           </head>
-          <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #0f172a;">
-            <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #0f172a; padding: 40px 20px;">
+          <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #0a0a0a !important;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #0a0a0a; padding: 40px 20px;" bgcolor="#0a0a0a">
               <tr>
                 <td align="center">
-                  <table width="600" cellpadding="0" cellspacing="0" style="background-color: #1e293b; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);">
+                  <table width="600" cellpadding="0" cellspacing="0" style="background-color: #1a1a1a; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8); border: 1px solid #2a2a2a;" bgcolor="#1a1a1a">
                     <!-- Header -->
                     <tr>
-                      <td style="background: linear-gradient(135deg, #00D9FF 0%, #0891b2 100%); padding: 40px 30px; text-align: center;">
-                        <div style="font-size: 64px; margin-bottom: 10px;">${serviceLogo}</div>
+                      <td style="background: linear-gradient(135deg, #00D9FF 0%, #0891b2 100%); padding: 40px 30px; text-align: center;" bgcolor="#0891b2">
+                        <div style="font-size: 64px; margin-bottom: 10px; line-height: 1;">${serviceLogo}</div>
                         <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">🎉 Subscription Activated!</h1>
-                        <p style="margin: 10px 0 0 0; color: #e0f2fe; font-size: 16px;">Your ${serviceName} subscription is now active</p>
+                        <p style="margin: 10px 0 0 0; color: #ffffff; font-size: 16px; opacity: 0.9;">Your ${serviceName} subscription is now active</p>
                       </td>
                     </tr>
                     
                     <!-- Content -->
                     <tr>
-                      <td style="padding: 40px 30px;">
-                        <p style="margin: 0 0 20px 0; color: #cbd5e1; font-size: 16px; line-height: 1.6;">
+                      <td style="padding: 40px 30px; background-color: #1a1a1a;" bgcolor="#1a1a1a">
+                        <p style="margin: 0 0 20px 0; color: #e0e0e0; font-size: 16px; line-height: 1.6;">
                           Hi ${user.name || 'there'},
                         </p>
-                        <p style="margin: 0 0 30px 0; color: #cbd5e1; font-size: 16px; line-height: 1.6;">
+                        <p style="margin: 0 0 30px 0; color: #cccccc; font-size: 16px; line-height: 1.6;">
                           Great news! Your subscription has been successfully added to GeniePay. Here are the details:
                         </p>
                         
                         <!-- Subscription Details Card -->
-                        <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #334155; border-radius: 12px; margin-bottom: 30px; border: 1px solid #475569;">
+                        <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #262626; border-radius: 12px; margin-bottom: 30px; border: 1px solid #333333;" bgcolor="#262626">
                           <tr>
                             <td style="padding: 25px;">
                               <table width="100%" cellpadding="0" cellspacing="0">
                                 <tr>
-                                  <td style="padding: 10px 0; color: #94a3b8; font-size: 14px;">Service Name</td>
+                                  <td style="padding: 10px 0; color: #999999; font-size: 14px;">Service Name</td>
                                   <td align="right" style="padding: 10px 0; color: #00D9FF; font-size: 16px; font-weight: 600;">${serviceName}</td>
                                 </tr>
-                                <tr style="border-top: 1px solid #475569;">
-                                  <td style="padding: 10px 0; color: #94a3b8; font-size: 14px;">Subscription Fee</td>
+                                <tr style="border-top: 1px solid #333333;">
+                                  <td style="padding: 10px 0; color: #999999; font-size: 14px;">Subscription Fee</td>
                                   <td align="right" style="padding: 10px 0; color: #ffffff; font-size: 18px; font-weight: 700;">₹${price}/month</td>
                                 </tr>
-                                <tr style="border-top: 1px solid #475569;">
-                                  <td style="padding: 10px 0; color: #94a3b8; font-size: 14px;">Next Renewal Date</td>
-                                  <td align="right" style="padding: 10px 0; color: #e2e8f0; font-size: 14px;">${new Date(renewalDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
+                                <tr style="border-top: 1px solid #333333;">
+                                  <td style="padding: 10px 0; color: #999999; font-size: 14px;">Next Renewal Date</td>
+                                  <td align="right" style="padding: 10px 0; color: #e0e0e0; font-size: 14px;">${new Date(renewalDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
                                 </tr>
-                                <tr style="border-top: 1px solid #475569;">
-                                  <td style="padding: 10px 0; color: #94a3b8; font-size: 14px;">Payment Status</td>
+                                <tr style="border-top: 1px solid #333333;">
+                                  <td style="padding: 10px 0; color: #999999; font-size: 14px;">Payment Status</td>
                                   <td align="right" style="padding: 10px 0;">
-                                    <span style="background-color: ${paymentStatusBg}; color: ${paymentStatusColor}; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;">${paymentStatusText}</span>
+                                    <span style="background-color: ${paymentStatusBg}; color: ${paymentStatusColor}; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; display: inline-block;">${paymentStatusText}</span>
                                   </td>
                                 </tr>
                                 ${transactionId ? `
-                                <tr style="border-top: 1px solid #475569;">
-                                  <td style="padding: 10px 0; color: #94a3b8; font-size: 14px;">Transaction ID</td>
-                                  <td align="right" style="padding: 10px 0; color: #94a3b8; font-size: 12px; font-family: monospace;">${transactionId}</td>
+                                <tr style="border-top: 1px solid #333333;">
+                                  <td style="padding: 10px 0; color: #999999; font-size: 14px;">Transaction ID</td>
+                                  <td align="right" style="padding: 10px 0; color: #999999; font-size: 12px; font-family: monospace;">${transactionId}</td>
                                 </tr>` : ''}
                               </table>
                             </td>
@@ -985,13 +997,13 @@ app.post('/subscriptions/add',
                         </table>
                         
                         ${paymentStatus === 'paid' 
-                          ? `<p style="margin: 0 0 20px 0; color: #10b981; font-size: 15px; background-color: #064e3b; padding: 15px; border-radius: 8px; border-left: 4px solid #10b981;">
-                              ✅ <strong>Payment Confirmed!</strong><br/>
-                              Your subscription is active and will auto-renew on the renewal date.
+                          ? `<p style="margin: 0 0 20px 0; color: #10b981; font-size: 15px; background-color: #1a3a2e; padding: 15px; border-radius: 8px; border-left: 4px solid #10b981;">
+                              ✅ <strong style="color: #10b981;">Payment Confirmed!</strong><br/>
+                              <span style="color: #cccccc;">Your subscription is active and will auto-renew on the renewal date.</span>
                              </p>` 
-                          : `<p style="margin: 0 0 20px 0; color: #f59e0b; font-size: 15px; background-color: #78350f; padding: 15px; border-radius: 8px; border-left: 4px solid #f59e0b;">
-                              ⏳ <strong>Payment Pending</strong><br/>
-                              Complete the payment to activate automated renewals and enjoy uninterrupted service.
+                          : `<p style="margin: 0 0 20px 0; color: #f59e0b; font-size: 15px; background-color: #3a2a1a; padding: 15px; border-radius: 8px; border-left: 4px solid #f59e0b;">
+                              ⏳ <strong style="color: #f59e0b;">Payment Pending</strong><br/>
+                              <span style="color: #cccccc;">Complete the payment to activate automated renewals and enjoy uninterrupted service.</span>
                              </p>`
                         }
                         
@@ -999,7 +1011,7 @@ app.post('/subscriptions/add',
                         <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 30px;">
                           <tr>
                             <td align="center">
-                              <a href="${process.env.FRONTEND_URL || 'https://geniepay.vercel.app'}/dashboard" style="display: inline-block; background: linear-gradient(135deg, #00D9FF 0%, #0891b2 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 12px rgba(0, 217, 255, 0.3);">
+                              <a href="${process.env.FRONTEND_URL || 'https://genie-pay.vercel.app'}/dashboard" style="display: inline-block; background: linear-gradient(135deg, #00D9FF 0%, #0891b2 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 12px rgba(0, 217, 255, 0.3);">
                                 View Dashboard
                               </a>
                             </td>
@@ -1010,11 +1022,11 @@ app.post('/subscriptions/add',
                     
                     <!-- Footer -->
                     <tr>
-                      <td style="background-color: #0f172a; padding: 30px; text-align: center; border-top: 1px solid #334155;">
-                        <p style="margin: 0 0 10px 0; color: #64748b; font-size: 14px;">
+                      <td style="background-color: #0a0a0a; padding: 30px; text-align: center; border-top: 1px solid #2a2a2a;" bgcolor="#0a0a0a">
+                        <p style="margin: 0 0 10px 0; color: #666666; font-size: 14px;">
                           Need help? Reply to this email or contact our support team.
                         </p>
-                        <p style="margin: 0; color: #475569; font-size: 12px;">
+                        <p style="margin: 0; color: #555555; font-size: 12px;">
                           © ${new Date().getFullYear()} GeniePay - AI + Blockchain Subscription Management
                         </p>
                       </td>
