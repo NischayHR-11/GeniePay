@@ -845,7 +845,16 @@ app.post('/subscriptions/add',
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { serviceName, price, renewalDate, isConnected } = req.body;
+      const { 
+        serviceName, 
+        price, 
+        renewalDate, 
+        isConnected,
+        paymentStatus,
+        paymentMethod,
+        paymentDate,
+        transactionId
+      } = req.body;
 
       const subscription = new Subscription({
         userId: req.user.id,
@@ -853,7 +862,11 @@ app.post('/subscriptions/add',
         price,
         renewalDate: new Date(renewalDate),
         status: 'active',
-        isConnected: isConnected || false
+        isConnected: isConnected || false,
+        paymentStatus: paymentStatus || 'manual',
+        paymentMethod: paymentMethod || 'manual',
+        paymentDate: paymentDate ? new Date(paymentDate) : null,
+        transactionId: transactionId || null
       });
 
       await subscription.save();
@@ -867,14 +880,25 @@ app.post('/subscriptions/add',
       // Send confirmation email asynchronously (non-blocking)
       const user = await User.findById(req.user.id);
       if (transporter && user) {
+        const paymentStatusText = paymentStatus === 'paid' 
+          ? `✅ Payment Confirmed (${paymentMethod.toUpperCase()})` 
+          : '⏳ Payment Pending';
+        
         sendEmail(
           user.email,
           `✅ ${serviceName} Subscription Added`,
-          `<h2>Subscription Added Successfully</h2>
-           <p><strong>Service:</strong> ${serviceName}</p>
-           <p><strong>Price:</strong> ₹${price}</p>
-           <p><strong>Next Renewal:</strong> ${new Date(renewalDate).toLocaleDateString()}</p>
-           <p>Your payment will be automated via blockchain!</p>`
+          `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+           <h2 style="color: #00D9FF;">Subscription Added Successfully</h2>
+           <div style="background: #1a1a2e; padding: 20px; border-radius: 8px; margin: 20px 0;">
+             <p><strong>Service:</strong> ${serviceName}</p>
+             <p><strong>Price:</strong> ₹${price}/month</p>
+             <p><strong>Next Renewal:</strong> ${new Date(renewalDate).toLocaleDateString()}</p>
+             <p><strong>Payment Status:</strong> ${paymentStatusText}</p>
+             ${transactionId ? `<p><strong>Transaction ID:</strong> ${transactionId}</p>` : ''}
+           </div>
+           <p>${paymentStatus === 'paid' ? 'Your subscription is now active!' : 'Complete payment to activate automated renewals.'}</p>
+           <p style="color: #666; font-size: 12px;">Powered by GeniePay - AI + Blockchain Subscription Management</p>
+          </div>`
         ).catch(err => console.error('Email send error:', err));
       }
     } catch (error) {
@@ -883,6 +907,129 @@ app.post('/subscriptions/add',
     }
   }
 );
+
+// ========================================
+// Razorpay Payment Routes
+// ========================================
+
+const Razorpay = require('razorpay');
+const crypto = require('crypto');
+
+// Initialize Razorpay
+let razorpayInstance;
+if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+  razorpayInstance = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET,
+  });
+  console.log('✅ Razorpay initialized successfully');
+} else {
+  console.log('⚠️  Razorpay credentials not found in .env');
+}
+
+// POST /payment/create-order - Create Razorpay order
+app.post('/payment/create-order', authenticateToken, async (req, res) => {
+  try {
+    const { amount, currency, notes } = req.body;
+
+    if (!razorpayInstance) {
+      return res.status(503).json({ error: 'Payment gateway not configured' });
+    }
+
+    // Create order
+    const options = {
+      amount: amount, // Amount in paise
+      currency: currency || 'INR',
+      receipt: `rcpt_${Date.now()}`,
+      notes: notes || {}
+    };
+
+    const order = await razorpayInstance.orders.create(options);
+
+    res.json({
+      success: true,
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      keyId: process.env.RAZORPAY_KEY_ID // Send to frontend
+    });
+  } catch (error) {
+    console.error('Create order error:', error);
+    res.status(500).json({ error: 'Failed to create payment order' });
+  }
+});
+
+// POST /payment/verify - Verify Razorpay payment
+app.post('/payment/verify', authenticateToken, async (req, res) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+
+    // Generate signature
+    const generatedSignature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest('hex');
+
+    // Verify signature
+    if (generatedSignature === razorpay_signature) {
+      // Payment verified successfully
+      console.log(`✅ Payment verified: ${razorpay_payment_id}`);
+      
+      res.json({
+        success: true,
+        paymentId: razorpay_payment_id,
+        orderId: razorpay_order_id
+      });
+    } else {
+      // Signature mismatch
+      console.error('❌ Payment verification failed: Signature mismatch');
+      res.status(400).json({ error: 'Payment verification failed' });
+    }
+  } catch (error) {
+    console.error('Payment verification error:', error);
+    res.status(500).json({ error: 'Failed to verify payment' });
+  }
+});
+
+// ========================================
+// Transaction History Routes
+// ========================================
+
+// GET /transactions - Get user's transaction history
+app.get('/transactions', authenticateToken, async (req, res) => {
+  try {
+    // Get all subscriptions with payment information
+    const subscriptions = await Subscription.find({
+      userId: req.user.id,
+      paymentStatus: { $exists: true }
+    })
+      .select('serviceName price paymentStatus paymentMethod paymentDate transactionId platformFee totalPaid')
+      .sort({ paymentDate: -1 })
+      .lean();
+
+    // Format transactions
+    const transactions = subscriptions.map(sub => ({
+      _id: sub._id,
+      serviceName: sub.serviceName,
+      amount: sub.price,  // Map price to amount
+      paymentStatus: sub.paymentStatus || 'manual',
+      paymentMethod: sub.paymentMethod || 'N/A',
+      paymentDate: sub.paymentDate,
+      transactionId: sub.transactionId || null,
+      platformFee: sub.platformFee || 0,
+      totalPaid: sub.totalPaid || sub.price  // Fallback to price
+    }));
+
+    res.json({
+      success: true,
+      transactions,
+      totalTransactions: transactions.length
+    });
+  } catch (error) {
+    console.error('Get transactions error:', error);
+    res.status(500).json({ error: 'Failed to fetch transactions' });
+  }
+});
 
 // DELETE /subscriptions/:id - Delete subscription
 app.delete('/subscriptions/:id', authenticateToken, async (req, res) => {

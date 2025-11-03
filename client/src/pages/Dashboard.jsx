@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Zap, Plus, Trash2, Pause, Play, LogOut, Wallet, 
-  Bot, Send, TrendingUp, DollarSign, Calendar 
+  Bot, Send, TrendingUp, DollarSign, Calendar, Receipt 
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
@@ -10,6 +10,7 @@ import SimpleBackground from '../components/SimpleBackground'
 import SubscriptionCard from '../components/SubscriptionCard'
 import EnhancedAddSubscriptionModal from '../components/EnhancedAddSubscriptionModal'
 import AIAssistant from '../components/AIAssistant'
+import TransactionHistory from '../components/TransactionHistory'
 import SpendingChart from '../components/SpendingChart'
 import {
   getSubscriptions,
@@ -27,6 +28,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showAIChat, setShowAIChat] = useState(false)
+  const [showTransactions, setShowTransactions] = useState(false)
   const [walletConnected, setWalletConnected] = useState(false)
   const [walletAddress, setWalletAddress] = useState('')
 
@@ -128,6 +130,22 @@ export default function Dashboard() {
                 <span className="hidden sm:inline text-sm">Connect Wallet</span>
               </button>
             )}
+
+            {/* Transactions Button */}
+            <button
+              onClick={() => {
+                console.log('Transactions button clicked, current state:', showTransactions)
+                setShowTransactions(!showTransactions)
+              }}
+              className={`rounded-lg px-2 sm:px-4 py-1.5 sm:py-2 flex items-center gap-1 sm:gap-2 transition-colors ${
+                showTransactions 
+                  ? 'bg-thor-blue text-white' 
+                  : 'border border-thor-blue hover:bg-thor-blue/10'
+              }`}
+            >
+              <Receipt className="w-4 h-4" />
+              <span className="hidden sm:inline text-sm">Transactions</span>
+            </button>
 
             {/* AI Assistant Toggle */}
             <button
@@ -295,9 +313,13 @@ export default function Dashboard() {
 
       {/* Enhanced Add Subscription Modal with Real Service Integration */}
       <EnhancedAddSubscriptionModal
+        key={showAddModal ? 'open' : 'closed'}
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
-        onSuccess={fetchSubscriptions}
+        onSuccess={() => {
+          fetchSubscriptions()
+          setShowAddModal(false)
+        }}
       />
 
       {/* AI Assistant Sidebar */}
@@ -305,6 +327,12 @@ export default function Dashboard() {
         isOpen={showAIChat}
         onClose={() => setShowAIChat(false)}
         onUpdate={fetchSubscriptions}
+      />
+
+      {/* Transaction History Sidebar */}
+      <TransactionHistory
+        isOpen={showTransactions}
+        onClose={() => setShowTransactions(false)}
       />
     </div>
   )

@@ -32,6 +32,32 @@ const subscriptionSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  paymentStatus: {
+    type: String,
+    enum: ['paid', 'pending', 'failed', 'manual'],
+    default: 'manual'
+  },
+  paymentMethod: {
+    type: String,
+    enum: ['razorpay', 'upi', 'card', 'netbanking', 'wallet', 'blockchain', 'manual'],
+    default: 'manual'
+  },
+  paymentDate: {
+    type: Date,
+    default: null
+  },
+  transactionId: {
+    type: String,
+    default: null
+  },
+  platformFee: {
+    type: Number,
+    default: 0
+  },
+  totalPaid: {
+    type: Number,
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now

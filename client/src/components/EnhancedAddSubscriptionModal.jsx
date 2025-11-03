@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Plus, Loader, ExternalLink, Shield, Zap, Check, AlertTriangle } from 'lucide-react'
-import { addSubscription, connectRealService } from '../utils/api'
+import { X, Plus, Loader, ExternalLink, Shield, Zap, Check, AlertTriangle, Smartphone, CreditCard, CheckCircle, Copy, QrCode, CreditCard as CardIcon } from 'lucide-react'
+import { addSubscription, connectRealService, createRazorpayOrder, verifyRazorpayPayment } from '../utils/api'
+import { getPaymentBreakdown } from '../utils/razorpay'
 
 // Real services that support payment automation
 const REAL_SERVICES = {
@@ -118,7 +119,7 @@ const REAL_SERVICES = {
 }
 
 export default function EnhancedAddSubscriptionModal({ isOpen, onClose, onSuccess }) {
-  const [step, setStep] = useState(1) // 1: Select Service, 2: Connect Account, 3: Configure Payment
+  const [step, setStep] = useState(1) // 1: Select Service, 2: Connect Account, 3: Configure, 4: Payment
   const [serviceName, setServiceName] = useState('')
   const [selectedService, setSelectedService] = useState(null)
   const [selectedPlan, setSelectedPlan] = useState(0)
@@ -133,6 +134,11 @@ export default function EnhancedAddSubscriptionModal({ isOpen, onClose, onSucces
   const [loginWindow, setLoginWindow] = useState(null)
   const [checkingLogin, setCheckingLogin] = useState(false)
   const [debugInfo, setDebugInfo] = useState('Waiting for connection...')
+  
+  // Payment states
+  const [paymentStep, setPaymentStep] = useState('select') // 'select' | 'processing' | 'success'
+  const [paymentData, setPaymentData] = useState(null)
+  const [razorpayOrderId, setRazorpayOrderId] = useState('')
 
   // Set default renewal date when modal opens
   useEffect(() => {
@@ -437,52 +443,215 @@ export default function EnhancedAddSubscriptionModal({ isOpen, onClose, onSucces
     setStep(3)
   }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
-
+  // Navigate to payment step
+  const handleConfigureContinue = () => {
     // Validate required fields
     if (!serviceName.trim()) {
       setError('Service name is required')
-      setLoading(false)
       return
     }
     if (!price || parseFloat(price) <= 0) {
       setError('Valid price is required')
-      setLoading(false)
       return
     }
     if (!renewalDate) {
       setError('Renewal date is required')
-      setLoading(false)
       return
     }
+    
+    // Clear any previous errors
+    setError('')
+    
+    // Move to payment step and automatically open Razorpay
+    setStep(4)
+    setPaymentStep('select')
+    
+    // Auto-trigger Razorpay payment after a short delay
+    setTimeout(() => {
+      handleRazorpayPayment()
+    }, 500)
+  }
 
+  // Handle Razorpay payment initiation
+  const handleRazorpayPayment = async () => {
+    const amount = parseFloat(price)
+    
+    if (!amount || amount <= 0) {
+      setError('Invalid payment amount')
+      return
+    }
+    
+    setPaymentStep('processing')
+    setLoading(true)
+    
     try {
-      // Determine if the subscription is connected to a real service
-      const isConnected = selectedService && connectionStatus === 'connected'
+      // Get payment breakdown
+      const breakdown = getPaymentBreakdown(amount, serviceName)
       
-      // Call the API function with connection status
-      await addSubscription(serviceName, parseFloat(price), renewalDate, isConnected)
+      // Create Razorpay order
+      const orderResponse = await createRazorpayOrder(
+        breakdown.amountInPaise,
+        'INR',
+        {
+          serviceName,
+          subscriptionAmount: breakdown.subscriptionAmount,
+          platformFee: breakdown.platformFee
+        }
+      )
       
-      // Log connection data for debugging
-      if (isConnected) {
-        console.log('Real service connection saved:', {
-          serviceKey: selectedService.key,
-          plan: selectedService.plans[selectedPlan],
-          automatePayments,
-          paymentMethod
-        })
+      setRazorpayOrderId(orderResponse.orderId)
+      
+      // Initialize Razorpay checkout
+      const options = {
+        key: orderResponse.keyId,
+        amount: breakdown.amountInPaise,
+        currency: 'INR',
+        name: 'GeniePay',
+        description: `${serviceName} - First Month Payment`,
+        order_id: orderResponse.orderId,
+        handler: async function (response) {
+          // Payment successful - verify on backend
+          await handlePaymentSuccess(response)
+        },
+        prefill: {
+          name: '', // Add user name if available
+          email: '', // Add user email if available
+        },
+        notes: {
+          serviceName,
+          subscriptionAmount: breakdown.subscriptionAmount,
+          platformFee: breakdown.platformFee
+        },
+        theme: {
+          color: '#00D9FF'
+        },
+        modal: {
+          ondismiss: function() {
+            // Payment cancelled - redirect to dashboard
+            setPaymentStep('select')
+            setLoading(false)
+            
+            // Reset form state
+            setServiceName('')
+            setPrice('')
+            setRenewalDate('')
+            setSelectedService(null)
+            setStep(1)
+            setConnectionStatus(null)
+            setPaymentStep('select')
+            setError('')
+            
+            // Close modal - user returns to dashboard
+            onClose()
+          }
+        }
       }
       
-      // Reset form
+      const rzp = new window.Razorpay(options)
+      rzp.open()
+      setLoading(false)
+      
+    } catch (err) {
+      console.error('Payment initiation error:', err)
+      setError(err.response?.data?.error || 'Failed to initiate payment')
+      setPaymentStep('select')
+      setLoading(false)
+    }
+  }
+
+  // Handle successful payment
+  const handlePaymentSuccess = async (razorpayResponse) => {
+    setLoading(true)
+    
+    try {
+      // Verify payment on backend
+      const verificationResponse = await verifyRazorpayPayment({
+        razorpay_order_id: razorpayResponse.razorpay_order_id,
+        razorpay_payment_id: razorpayResponse.razorpay_payment_id,
+        razorpay_signature: razorpayResponse.razorpay_signature
+      })
+      
+      if (verificationResponse.success) {
+        // Payment verified - save subscription
+        const isConnected = selectedService && connectionStatus === 'connected'
+        const breakdown = getPaymentBreakdown(parseFloat(price), serviceName)
+        
+        const paymentData = {
+          paymentStatus: 'paid',
+          paymentMethod: 'razorpay',
+          paymentDate: new Date().toISOString(),
+          transactionId: razorpayResponse.razorpay_payment_id,
+          platformFee: breakdown.platformFee,
+          totalPaid: breakdown.totalAmount
+        }
+        
+        await addSubscription(
+          serviceName, 
+          parseFloat(price), 
+          renewalDate, 
+          isConnected,
+          paymentData
+        )
+        
+        setPaymentStep('success')
+        
+        // Show success message briefly, then close
+        setTimeout(() => {
+          // Reset form state
+          setServiceName('')
+          setPrice('')
+          setRenewalDate('')
+          setSelectedService(null)
+          setStep(1)
+          setConnectionStatus(null)
+          setPaymentStep('select')
+          setPaymentData(null)
+          setRazorpayOrderId('')
+          setError('')
+          
+          // Call onSuccess which will refresh and close
+          onSuccess()
+        }, 2000)
+      }
+    } catch (err) {
+      console.error('Payment verification error:', err)
+      setError('Payment verification failed. Please contact support.')
+      setPaymentStep('select')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Skip payment option
+  const handleSkipPayment = async () => {
+    setLoading(true)
+    
+    try {
+      const isConnected = selectedService && connectionStatus === 'connected'
+      
+      const paymentData = {
+        paymentStatus: 'manual',
+        paymentMethod: 'manual',
+        paymentDate: null,
+        transactionId: null
+      }
+      
+      await addSubscription(
+        serviceName, 
+        parseFloat(price), 
+        renewalDate, 
+        isConnected,
+        paymentData
+      )
+      
+      // Reset and close
       setServiceName('')
       setPrice('')
       setRenewalDate('')
       setSelectedService(null)
       setStep(1)
       setConnectionStatus(null)
+      setPaymentStep('select')
       
       onSuccess()
       onClose()
@@ -492,6 +661,11 @@ export default function EnhancedAddSubscriptionModal({ isOpen, onClose, onSucces
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    handleConfigureContinue()
   }
 
   const today = new Date().toISOString().split('T')[0]
@@ -525,6 +699,7 @@ export default function EnhancedAddSubscriptionModal({ isOpen, onClose, onSucces
                     <div className={`w-2 h-2 sm:w-3 sm:h-3 rounded-full ${step >= 1 ? 'bg-thor-blue' : 'bg-gray-600'}`} />
                     <div className={`w-2 h-2 sm:w-3 sm:h-3 rounded-full ${step >= 2 ? 'bg-thor-blue' : 'bg-gray-600'}`} />
                     <div className={`w-2 h-2 sm:w-3 sm:h-3 rounded-full ${step >= 3 ? 'bg-thor-blue' : 'bg-gray-600'}`} />
+                    <div className={`w-2 h-2 sm:w-3 sm:h-3 rounded-full ${step >= 4 ? 'bg-thor-blue' : 'bg-gray-600'}`} />
                   </div>
                 </div>
                 <button
@@ -975,17 +1150,330 @@ export default function EnhancedAddSubscriptionModal({ isOpen, onClose, onSucces
                       {loading ? (
                         <>
                           <Loader className="w-4 h-4 animate-spin" />
-                          Adding...
+                          Processing...
                         </>
                       ) : (
                         <>
-                          <Plus className="w-4 h-4" />
-                          Add Subscription
+                          Continue to Payment
                         </>
                       )}
                     </button>
                   </div>
                 </form>
+              )}
+
+              {/* Step 4: Payment */}
+              {step === 4 && (
+                <div>
+                  {paymentStep === 'select' && (
+                    <div className="space-y-6">
+                      <div className="text-center">
+                        <h3 className="text-xl font-bold mb-2">Complete First Payment</h3>
+                        <p className="text-gray-400 text-sm">Pay the first month to activate your subscription</p>
+                      </div>
+
+                      {/* Subscription Summary */}
+                      <div className="bg-thor-dark/50 rounded-lg p-4 border border-thor-blue/30">
+                        <div className="flex items-center gap-3 mb-4">
+                          {selectedService && <span className="text-3xl">{selectedService.logo}</span>}
+                          <div className="flex-1">
+                            <h4 className="font-semibold text-lg">{serviceName}</h4>
+                            {selectedService && (
+                              <p className="text-sm text-gray-400">{selectedService.plans[selectedPlan]}</p>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-2 border-t border-gray-700 pt-3">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-400">First Month Payment</span>
+                            <span className="font-semibold">{formatAmount(parseFloat(price))}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-400">Renewal Date</span>
+                            <span>{new Date(renewalDate).toLocaleDateString()}</span>
+                          </div>
+                          <div className="flex justify-between items-center pt-2 border-t border-gray-700">
+                            <span className="text-lg font-bold">Total Amount</span>
+                            <span className="text-2xl font-bold text-thor-red">{formatAmount(parseFloat(price))}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Payment Method Selection */}
+                      <div className="space-y-3">
+                        <h4 className="font-semibold mb-3">Payment via Razorpay</h4>
+                        
+                        {/* Razorpay Payment Option */}
+                        <div className="w-full p-4 rounded-lg border-2 border-thor-blue bg-thor-blue/10">
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className="w-12 h-12 rounded-full flex items-center justify-center bg-thor-blue/20">
+                              <CreditCard className="w-6 h-6 text-thor-blue" />
+                            </div>
+                            <div className="flex-1">
+                              <div className="font-semibold mb-1 flex items-center gap-2">
+                                Pay via Razorpay
+                                <span className="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded">Recommended</span>
+                              </div>
+                              <p className="text-sm text-gray-400">UPI, Cards, Net Banking & Wallets</p>
+                            </div>
+                          </div>
+                          
+                          {/* Fee Breakdown */}
+                          <div className="bg-thor-dark/50 rounded-lg p-3 space-y-2 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Subscription Price:</span>
+                              <span className="font-semibold">{formatAmount(parseFloat(price))}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Platform Fee (2%):</span>
+                              <span className="font-semibold text-thor-blue">
+                                + {formatAmount(parseFloat(price) * 0.02)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center pt-2 border-t border-gray-700">
+                              <span className="font-bold">Total Amount:</span>
+                              <span className="text-lg font-bold text-thor-red">
+                                {formatAmount(parseFloat(price) * 1.02)}
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-2">
+                              💳 Platform fee is for automatic payment verification
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Skip Payment Option */}
+                        <button
+                          onClick={() => setPaymentChoice('skip')}
+                          className={`w-full p-4 rounded-lg border-2 transition-all text-left ${
+                            paymentChoice === 'skip'
+                              ? 'border-gray-500 bg-gray-700/20'
+                              : 'border-gray-700 hover:border-gray-600'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                              paymentChoice === 'skip' ? 'bg-gray-600' : 'bg-gray-700'
+                            }`}>
+                              <Smartphone className="w-6 h-6 text-gray-400" />
+                            </div>
+                            <div className="flex-1">
+                              <div className="font-semibold mb-1">Skip Payment</div>
+                              <p className="text-sm text-gray-400">Add subscription without payment (manual tracking)</p>
+                            </div>
+                            {paymentChoice === 'skip' && <Check className="w-5 h-5 text-gray-400" />}
+                          </div>
+                        </button>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex gap-3 mt-6">
+                        <button
+                          onClick={() => setStep(3)}
+                          className="px-4 py-2 border border-gray-600 hover:border-thor-blue/50 rounded-lg transition-colors"
+                        >
+                          Back
+                        </button>
+                        
+                        <button
+                          onClick={paymentChoice === 'skip' ? () => handlePaymentConfirm(false) : handleRazorpayPayment}
+                          disabled={loading}
+                          className="flex-1 thor-button flex items-center justify-center gap-2 disabled:opacity-50"
+                        >
+                          {loading ? (
+                            <>
+                              <Loader className="w-5 h-5 animate-spin" />
+                              Processing...
+                            </>
+                          ) : paymentChoice === 'skip' ? (
+                            <>
+                              Continue without Payment
+                            </>
+                          ) : (
+                            <>
+                              <CreditCard className="w-5 h-5" />
+                              Pay {formatAmount(parseFloat(price) * 1.02)} via Razorpay
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {paymentStep === 'processing' && (
+                    <div className="text-center py-12">
+                      <div className="mb-6">
+                        <div className="w-20 h-20 mx-auto rounded-full bg-thor-blue/20 flex items-center justify-center animate-pulse">
+                          <Smartphone className="w-10 h-10 text-thor-blue" />
+                        </div>
+                      </div>
+                      <h3 className="text-xl font-bold mb-2">Opening UPI Payment</h3>
+                      <p className="text-gray-400 mb-4">Complete payment in your UPI app</p>
+                      <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
+                        <Loader className="w-4 h-4 animate-spin" />
+                        <span>Redirecting to UPI apps...</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {paymentStep === 'confirmation' && (
+                    <div className="space-y-6">
+                      <div className="text-center">
+                        <div className="w-20 h-20 mx-auto rounded-full bg-yellow-500/20 flex items-center justify-center mb-4">
+                          {isMobileDevice() ? (
+                            <AlertTriangle className="w-10 h-10 text-yellow-500" />
+                          ) : (
+                            <Smartphone className="w-10 h-10 text-thor-blue" />
+                          )}
+                        </div>
+                        <h3 className="text-xl font-bold mb-2">
+                          {isMobileDevice() ? 'Payment Confirmation' : 'Complete Payment on Phone'}
+                        </h3>
+                        <p className="text-gray-400">
+                          {isMobileDevice() 
+                            ? 'Did you complete the payment in your UPI app?' 
+                            : 'Use your phone to complete the payment'}
+                        </p>
+                      </div>
+
+                      {/* Desktop Payment Instructions */}
+                      {!isMobileDevice() && (
+                        <div className="bg-thor-blue/10 border border-thor-blue/30 rounded-lg p-4">
+                          <h4 className="font-semibold mb-3 flex items-center gap-2">
+                            <Smartphone className="w-5 h-5 text-thor-blue" />
+                            Payment Instructions (Desktop)
+                          </h4>
+                          <div className="space-y-3 text-sm">
+                            <div className="bg-thor-dark/50 rounded p-3">
+                              <p className="text-gray-400 mb-1">Step 1: Open any UPI app on your phone</p>
+                              <div className="flex gap-2 text-xs text-gray-500">
+                                <span>📱 GPay</span>
+                                <span>📱 PhonePe</span>
+                                <span>📱 Paytm</span>
+                                <span>📱 BHIM</span>
+                              </div>
+                            </div>
+                            
+                            <div className="bg-thor-dark/50 rounded p-3">
+                              <p className="text-gray-400 mb-2">Step 2: Pay to this UPI ID:</p>
+                              <div className="flex items-center justify-between bg-thor-darker p-2 rounded">
+                                <code className="text-thor-blue font-mono">9448048720@axl</code>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText('9448048720@axl')
+                                    alert('UPI ID copied!')
+                                  }}
+                                  className="p-1.5 hover:bg-thor-blue/20 rounded transition-colors"
+                                  title="Copy UPI ID"
+                                >
+                                  <Copy className="w-4 h-4 text-thor-blue" />
+                                </button>
+                              </div>
+                            </div>
+                            
+                            <div className="bg-thor-dark/50 rounded p-3">
+                              <p className="text-gray-400 mb-1">Step 3: Enter amount</p>
+                              <p className="text-2xl font-bold text-thor-red">{formatAmount(parseFloat(price))}</p>
+                            </div>
+                            
+                            <div className="bg-thor-dark/50 rounded p-3">
+                              <p className="text-gray-400 mb-1">Step 4: Add note (optional)</p>
+                              <p className="text-sm">{serviceName} - First Payment</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Payment Details */}
+                      <div className="bg-thor-dark/50 rounded-lg p-4 space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Service</span>
+                          <span className="font-semibold">{serviceName}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Amount Paid</span>
+                          <span className="font-semibold text-thor-red">{formatAmount(parseFloat(price))}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Transaction ID</span>
+                          <span className="font-mono text-xs">{transactionId}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Payment To</span>
+                          <span className="font-mono text-xs">9448048720@axl</span>
+                        </div>
+                      </div>
+
+                      {/* Confirmation Buttons */}
+                      <div className="space-y-3">
+                        <button
+                          onClick={() => handlePaymentConfirm(true)}
+                          disabled={loading}
+                          className="w-full thor-button flex items-center justify-center gap-2 py-3"
+                        >
+                          {loading ? (
+                            <>
+                              <Loader className="w-5 h-5 animate-spin" />
+                              Saving...
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle className="w-5 h-5" />
+                              Yes, Payment Completed ✓
+                            </>
+                          )}
+                        </button>
+                        
+                        <button
+                          onClick={() => setPaymentStep('select')}
+                          disabled={loading}
+                          className="w-full bg-gray-700 hover:bg-gray-600 py-3 rounded-lg transition-colors"
+                        >
+                          No, Try Again
+                        </button>
+                        
+                        <button
+                          onClick={() => handlePaymentConfirm(false)}
+                          disabled={loading}
+                          className="w-full text-gray-400 hover:text-white py-2 text-sm"
+                        >
+                          Skip Payment & Add Manually
+                        </button>
+                      </div>
+
+                      {/* Help Text */}
+                      <div className="bg-thor-blue/10 border border-thor-blue/30 rounded-lg p-3">
+                        <p className="text-xs text-gray-400">
+                          💡 <strong>Tip:</strong> Check your UPI app transaction history to verify if payment was successful
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Payment Success */}
+                  {paymentStep === 'success' && (
+                    <div className="text-center py-12">
+                      <motion.div
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ type: "spring", duration: 0.5 }}
+                        className="mb-6"
+                      >
+                        <div className="w-20 h-20 mx-auto rounded-full bg-green-500/20 flex items-center justify-center">
+                          <CheckCircle className="w-10 h-10 text-green-500" />
+                        </div>
+                      </motion.div>
+                      <h3 className="text-xl font-bold mb-2 text-green-500">Payment Successful!</h3>
+                      <p className="text-gray-400 mb-4">Your subscription has been activated</p>
+                      <div className="bg-thor-dark/50 rounded-lg p-4 mb-4 inline-block">
+                        <p className="text-sm text-gray-400">Subscription: <span className="text-white font-semibold">{serviceName}</span></p>
+                        <p className="text-sm text-gray-400">Amount Paid: <span className="text-thor-blue font-semibold">{formatAmount(parseFloat(price) * 1.02)}</span></p>
+                      </div>
+                      <p className="text-sm text-gray-500">Redirecting to dashboard...</p>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </motion.div>

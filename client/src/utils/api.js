@@ -46,13 +46,23 @@ export const getSubscriptions = async () => {
   return response.data
 }
 
-export const addSubscription = async (serviceName, price, renewalDate, isConnected = false) => {
-  const response = await api.post('/subscriptions/add', {
+export const addSubscription = async (serviceName, price, renewalDate, isConnected = false, paymentData = null) => {
+  const payload = {
     serviceName,
     price,
     renewalDate,
     isConnected,
-  })
+  }
+  
+  // Add payment data if provided
+  if (paymentData) {
+    payload.paymentStatus = paymentData.paymentStatus
+    payload.paymentMethod = paymentData.paymentMethod
+    payload.paymentDate = paymentData.paymentDate
+    payload.transactionId = paymentData.transactionId
+  }
+  
+  const response = await api.post('/subscriptions/add', payload)
   return response.data
 }
 
@@ -92,6 +102,21 @@ export const sendNotification = async (type, subscriptionId) => {
   return response.data
 }
 
+// Razorpay Payment APIs
+export const createRazorpayOrder = async (amount, currency = 'INR', notes = {}) => {
+  const response = await api.post('/payment/create-order', {
+    amount,
+    currency,
+    notes
+  })
+  return response.data
+}
+
+export const verifyRazorpayPayment = async (paymentData) => {
+  const response = await api.post('/payment/verify', paymentData)
+  return response.data
+}
+
 // Real Service Integration APIs
 export const connectRealService = async (serviceKey, options = {}) => {
   const response = await api.post('/api/services/connect', {
@@ -108,6 +133,12 @@ export const getServiceSubscriptionDetails = async (serviceKey) => {
 
 export const automateServicePayment = async (serviceKey, amount) => {
   const response = await api.post(`/api/services/${serviceKey}/payment`, { amount })
+  return response.data
+}
+
+// Transaction APIs
+export const getTransactions = async () => {
+  const response = await api.get('/transactions')
   return response.data
 }
 
