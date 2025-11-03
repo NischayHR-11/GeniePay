@@ -877,28 +877,154 @@ app.post('/subscriptions/add',
         subscription
       });
 
+      // Get service logo based on service name
+      const getServiceLogo = (serviceName) => {
+        const serviceLogos = {
+          'netflix': '🎬',
+          'spotify': '🎵',
+          'amazon prime': '📦',
+          'prime': '📦',
+          'discord nitro': '🎮',
+          'discord': '🎮',
+          'github pro': '💻',
+          'github': '💻',
+          'youtube premium': '📺',
+          'youtube': '📺',
+          'disney+ hotstar': '🏰',
+          'disney': '🏰',
+          'jiocinema premium': '🎭',
+          'jiocinema': '🎭',
+          'jio': '🎭',
+          'zomato gold': '🍽️',
+          'zomato': '🍽️',
+          'swiggy super': '🛵',
+          'swiggy': '🛵'
+        };
+        
+        const normalizedName = serviceName.toLowerCase();
+        return serviceLogos[normalizedName] || '📱'; // Default emoji if service not found
+      };
+      
+      const serviceLogo = getServiceLogo(serviceName);
+
       // Send confirmation email asynchronously (non-blocking)
       const user = await User.findById(req.user.id);
-      if (transporter && user) {
+      if (user && emailService !== 'none') {
         const paymentStatusText = paymentStatus === 'paid' 
           ? `✅ Payment Confirmed (${paymentMethod.toUpperCase()})` 
           : '⏳ Payment Pending';
         
+        const paymentStatusColor = paymentStatus === 'paid' ? '#10b981' : '#f59e0b';
+        const paymentStatusBg = paymentStatus === 'paid' ? '#d1fae5' : '#fef3c7';
+        
         sendEmail(
           user.email,
-          `✅ ${serviceName} Subscription Added`,
-          `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-           <h2 style="color: #00D9FF;">Subscription Added Successfully</h2>
-           <div style="background: #1a1a2e; padding: 20px; border-radius: 8px; margin: 20px 0;">
-             <p><strong>Service:</strong> ${serviceName}</p>
-             <p><strong>Price:</strong> ₹${price}/month</p>
-             <p><strong>Next Renewal:</strong> ${new Date(renewalDate).toLocaleDateString()}</p>
-             <p><strong>Payment Status:</strong> ${paymentStatusText}</p>
-             ${transactionId ? `<p><strong>Transaction ID:</strong> ${transactionId}</p>` : ''}
-           </div>
-           <p>${paymentStatus === 'paid' ? 'Your subscription is now active!' : 'Complete payment to activate automated renewals.'}</p>
-           <p style="color: #666; font-size: 12px;">Powered by GeniePay - AI + Blockchain Subscription Management</p>
-          </div>`
+          `✅ ${serviceName} Subscription Activated`,
+          `<!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Subscription Confirmation</title>
+          </head>
+          <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #0f172a;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #0f172a; padding: 40px 20px;">
+              <tr>
+                <td align="center">
+                  <table width="600" cellpadding="0" cellspacing="0" style="background-color: #1e293b; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);">
+                    <!-- Header -->
+                    <tr>
+                      <td style="background: linear-gradient(135deg, #00D9FF 0%, #0891b2 100%); padding: 40px 30px; text-align: center;">
+                        <div style="font-size: 64px; margin-bottom: 10px;">${serviceLogo}</div>
+                        <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">🎉 Subscription Activated!</h1>
+                        <p style="margin: 10px 0 0 0; color: #e0f2fe; font-size: 16px;">Your ${serviceName} subscription is now active</p>
+                      </td>
+                    </tr>
+                    
+                    <!-- Content -->
+                    <tr>
+                      <td style="padding: 40px 30px;">
+                        <p style="margin: 0 0 20px 0; color: #cbd5e1; font-size: 16px; line-height: 1.6;">
+                          Hi ${user.name || 'there'},
+                        </p>
+                        <p style="margin: 0 0 30px 0; color: #cbd5e1; font-size: 16px; line-height: 1.6;">
+                          Great news! Your subscription has been successfully added to GeniePay. Here are the details:
+                        </p>
+                        
+                        <!-- Subscription Details Card -->
+                        <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #334155; border-radius: 12px; margin-bottom: 30px; border: 1px solid #475569;">
+                          <tr>
+                            <td style="padding: 25px;">
+                              <table width="100%" cellpadding="0" cellspacing="0">
+                                <tr>
+                                  <td style="padding: 10px 0; color: #94a3b8; font-size: 14px;">Service Name</td>
+                                  <td align="right" style="padding: 10px 0; color: #00D9FF; font-size: 16px; font-weight: 600;">${serviceName}</td>
+                                </tr>
+                                <tr style="border-top: 1px solid #475569;">
+                                  <td style="padding: 10px 0; color: #94a3b8; font-size: 14px;">Subscription Fee</td>
+                                  <td align="right" style="padding: 10px 0; color: #ffffff; font-size: 18px; font-weight: 700;">₹${price}/month</td>
+                                </tr>
+                                <tr style="border-top: 1px solid #475569;">
+                                  <td style="padding: 10px 0; color: #94a3b8; font-size: 14px;">Next Renewal Date</td>
+                                  <td align="right" style="padding: 10px 0; color: #e2e8f0; font-size: 14px;">${new Date(renewalDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
+                                </tr>
+                                <tr style="border-top: 1px solid #475569;">
+                                  <td style="padding: 10px 0; color: #94a3b8; font-size: 14px;">Payment Status</td>
+                                  <td align="right" style="padding: 10px 0;">
+                                    <span style="background-color: ${paymentStatusBg}; color: ${paymentStatusColor}; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;">${paymentStatusText}</span>
+                                  </td>
+                                </tr>
+                                ${transactionId ? `
+                                <tr style="border-top: 1px solid #475569;">
+                                  <td style="padding: 10px 0; color: #94a3b8; font-size: 14px;">Transaction ID</td>
+                                  <td align="right" style="padding: 10px 0; color: #94a3b8; font-size: 12px; font-family: monospace;">${transactionId}</td>
+                                </tr>` : ''}
+                              </table>
+                            </td>
+                          </tr>
+                        </table>
+                        
+                        ${paymentStatus === 'paid' 
+                          ? `<p style="margin: 0 0 20px 0; color: #10b981; font-size: 15px; background-color: #064e3b; padding: 15px; border-radius: 8px; border-left: 4px solid #10b981;">
+                              ✅ <strong>Payment Confirmed!</strong><br/>
+                              Your subscription is active and will auto-renew on the renewal date.
+                             </p>` 
+                          : `<p style="margin: 0 0 20px 0; color: #f59e0b; font-size: 15px; background-color: #78350f; padding: 15px; border-radius: 8px; border-left: 4px solid #f59e0b;">
+                              ⏳ <strong>Payment Pending</strong><br/>
+                              Complete the payment to activate automated renewals and enjoy uninterrupted service.
+                             </p>`
+                        }
+                        
+                        <!-- CTA Button -->
+                        <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 30px;">
+                          <tr>
+                            <td align="center">
+                              <a href="${process.env.FRONTEND_URL || 'https://geniepay.vercel.app'}/dashboard" style="display: inline-block; background: linear-gradient(135deg, #00D9FF 0%, #0891b2 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 12px rgba(0, 217, 255, 0.3);">
+                                View Dashboard
+                              </a>
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                      <td style="background-color: #0f172a; padding: 30px; text-align: center; border-top: 1px solid #334155;">
+                        <p style="margin: 0 0 10px 0; color: #64748b; font-size: 14px;">
+                          Need help? Reply to this email or contact our support team.
+                        </p>
+                        <p style="margin: 0; color: #475569; font-size: 12px;">
+                          © ${new Date().getFullYear()} GeniePay - AI + Blockchain Subscription Management
+                        </p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </body>
+          </html>`
         ).catch(err => console.error('Email send error:', err));
       }
     } catch (error) {
