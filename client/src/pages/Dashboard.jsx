@@ -86,7 +86,29 @@ export default function Dashboard() {
     }
   }
 
+  // Detect if user is on mobile
+  const isMobile = () => {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+  }
+
+  // Open MetaMask mobile app or deep link
+  const openMetaMaskMobile = () => {
+    const currentUrl = window.location.href
+    // MetaMask deep link format
+    const metamaskDeepLink = `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}`
+    
+    // Try to open MetaMask app
+    window.location.href = metamaskDeepLink
+  }
+
   const handleConnectWallet = async () => {
+    // Check if on mobile without MetaMask browser
+    if (isMobile() && !window.ethereum) {
+      // On mobile without MetaMask - offer to open in MetaMask app
+      setShowMetaMaskPrompt(true)
+      return
+    }
+
     const result = await connectWallet()
     if (result.success) {
       setWalletConnected(true)
@@ -142,6 +164,12 @@ export default function Dashboard() {
   }
 
   const openWalletModal = () => {
+    // On mobile without MetaMask, offer to open in MetaMask app
+    if (isMobile() && !window.ethereum && !walletConnected) {
+      setShowMetaMaskPrompt(true)
+      return
+    }
+    
     setShowWalletModal(true)
     if (walletAddress) {
       fetchWalletDetails(walletAddress)
@@ -551,23 +579,42 @@ export default function Dashboard() {
 
               {/* Title */}
               <h3 className="text-2xl font-bold text-center mb-2">
-                MetaMask Not Detected
+                {isMobile() ? 'Open in MetaMask' : 'MetaMask Not Detected'}
               </h3>
 
               {/* Description */}
               <p className="text-gray-400 text-center mb-6">
-                To connect your wallet and enable blockchain features, you need to install the MetaMask browser extension.
+                {isMobile() 
+                  ? 'To connect your wallet, open this page in the MetaMask mobile app browser or install MetaMask.'
+                  : 'To connect your wallet and enable blockchain features, you need to install the MetaMask browser extension.'
+                }
               </p>
+
+              {/* Mobile: Open in MetaMask App */}
+              {isMobile() && (
+                <button
+                  onClick={openMetaMaskMobile}
+                  className="w-full thor-button py-3 flex items-center justify-center gap-2 mb-3"
+                >
+                  <ExternalLink className="w-5 h-5" />
+                  <span>Open in MetaMask App</span>
+                </button>
+              )}
 
               {/* Download Button */}
               <a
-                href={METAMASK_DOWNLOAD_URL}
+                href={isMobile() 
+                  ? (navigator.userAgent.includes('Android') 
+                      ? 'https://play.google.com/store/apps/details?id=io.metamask'
+                      : 'https://apps.apple.com/app/metamask/id1438144202')
+                  : METAMASK_DOWNLOAD_URL
+                }
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-full thor-button py-3 flex items-center justify-center gap-2 mb-3"
+                className={`w-full ${isMobile() ? 'border border-thor-blue hover:bg-thor-blue/10' : 'thor-button'} py-3 flex items-center justify-center gap-2 mb-3 rounded-lg transition-colors`}
               >
                 <Download className="w-5 h-5" />
-                <span>Download MetaMask</span>
+                <span>{isMobile() ? 'Install MetaMask App' : 'Download MetaMask'}</span>
                 <ExternalLink className="w-4 h-4" />
               </a>
 
