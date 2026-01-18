@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Plus, Loader, ExternalLink, Shield, Zap, Check, AlertTriangle, Smartphone, CreditCard, CheckCircle, Copy, QrCode, CreditCard as CardIcon } from 'lucide-react'
+import { X, Plus, Loader, ExternalLink, Shield, Zap, Check, AlertTriangle, Smartphone, CreditCard, CheckCircle, Copy, QrCode, CreditCard as CardIcon, Wallet, Download } from 'lucide-react'
 import { addSubscription, connectRealService, createRazorpayOrder, verifyRazorpayPayment } from '../utils/api'
 import { getPaymentBreakdown } from '../utils/razorpay'
+import { connectWallet, isWalletConnected, getAccount, sendTransaction, getBalance, METAMASK_DOWNLOAD_URL, switchToSepoliaTestnet, getCurrentNetwork } from '../utils/web3'
 
 // Real services that support payment automation
 const REAL_SERVICES = {
@@ -118,6 +119,16 @@ const REAL_SERVICES = {
   }
 }
 
+// Helper function to format currency
+const formatAmount = (amount) => {
+  if (isNaN(amount)) return '₹0.00'
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    minimumFractionDigits: 2
+  }).format(amount)
+}
+
 export default function EnhancedAddSubscriptionModal({ isOpen, onClose, onSuccess }) {
   const [step, setStep] = useState(1) // 1: Select Service, 2: Connect Account, 3: Configure, 4: Payment
   const [serviceName, setServiceName] = useState('')
@@ -139,6 +150,14 @@ export default function EnhancedAddSubscriptionModal({ isOpen, onClose, onSucces
   const [paymentStep, setPaymentStep] = useState('select') // 'select' | 'processing' | 'success'
   const [paymentData, setPaymentData] = useState(null)
   const [razorpayOrderId, setRazorpayOrderId] = useState('')
+  const [paymentChoice, setPaymentChoice] = useState('razorpay') // 'razorpay' | 'crypto' | 'skip'
+  
+  // Crypto payment states
+  const [walletConnected, setWalletConnected] = useState(false)
+  const [walletAddress, setWalletAddress] = useState('')
+  const [walletBalance, setWalletBalance] = useState(null)
+  const [showMetaMaskPrompt, setShowMetaMaskPrompt] = useState(false)
+  const [cryptoProcessing, setCryptoProcessing] = useState(false)
 
   // Set default renewal date when modal opens
   useEffect(() => {
@@ -444,7 +463,7 @@ export default function EnhancedAddSubscriptionModal({ isOpen, onClose, onSucces
   }
 
   // Navigate to payment step
-  const handleConfigureContinue = () => {
+  const handleConfigureContinue = (selectedPaymentMethod = 'razorpay') => {
     // Validate required fields
     if (!serviceName.trim()) {
       setError('Service name is required')
@@ -462,14 +481,24 @@ export default function EnhancedAddSubscriptionModal({ isOpen, onClose, onSucces
     // Clear any previous errors
     setError('')
     
-    // Move to payment step and automatically open Razorpay
-    setStep(4)
-    setPaymentStep('select')
+    // Update payment choice state
+    setPaymentChoice(selectedPaymentMethod)
     
-    // Auto-trigger Razorpay payment after a short delay
+    console.log('🎯 handleConfigureContinue called with:', selectedPaymentMethod)
+    
+    // Move to payment step
+    setStep(4)
+    setPaymentStep('processing')
+    
+    // Trigger the appropriate payment method based on selected method
     setTimeout(() => {
-      handleRazorpayPayment()
-    }, 500)
+      console.log('⏰ Timeout triggered, calling payment handler for:', selectedPaymentMethod)
+      if (selectedPaymentMethod === 'crypto') {
+        handleCryptoPayment()
+      } else {
+        handleRazorpayPayment()
+      }
+    }, 300)
   }
 
   // Handle Razorpay payment initiation
@@ -659,6 +688,168 @@ export default function EnhancedAddSubscriptionModal({ isOpen, onClose, onSucces
       console.error('Add subscription error:', err)
       setError(err.response?.data?.error || err.message || 'Failed to add subscription')
     } finally {
+      setLoading(false)
+    }
+  }
+
+  // Handle crypto wallet connection
+  const handleConnectCryptoWallet = async () => {
+    const result = await connectWallet()
+    if (result.success) {
+      setWalletConnected(true)
+      setWalletAddress(result.address)
+      // Fetch balance
+      try {
+        const balance = await getBalance(result.address)
+        setWalletBalance(parseFloat(balance).toFixed(4))
+      } catch (err) {
+        console.error('Error fetching balance:', err)
+      }
+      return { success: true, address: result.address }
+    } else if (result.errorCode === 'METAMASK_NOT_INSTALLED') {
+      setShowMetaMaskPrompt(true)
+      setPaymentStep('select')
+      return { success: false, error: 'MetaMask not installed' }
+    } else {
+      setError(result.error)
+      setPaymentStep('select')
+      return { success: false, error: result.error }
+    }
+  }
+
+  // Handle crypto payment
+  const handleCryptoPayment = async () => {
+    console.log('🚀 handleCryptoPayment called!')
+    setCryptoProcessing(true)
+    setPaymentStep('processing')
+    setError('')
+
+    try {
+      // First, ensure wallet is connected
+      let currentWalletAddress = walletAddress
+      console.log('📍 Current wallet state:', { walletConnected, walletAddress })
+      
+      if (!walletConnected || !currentWalletAddress) {
+        console.log('🔗 Wallet not connected, connecting first...')
+        const connectionResult = await handleConnectCryptoWallet()
+        console.log('🔗 Connection result:', connectionResult)
+        
+        if (!connectionResult.success) {
+          setCryptoProcessing(false)
+          return
+        }
+        currentWalletAddress = connectionResult.address
+      }
+
+      // Check current network and switch to Sepolia testnet if needed
+      console.log('🌐 Checking network...')
+      const network = await getCurrentNetwork()
+      console.log('Current network:', network)
+      
+      if (network && network.chainId !== '0xaa36a7') {
+        console.log('⚡ Switching to Sepolia testnet...')
+        const switchResult = await switchToSepoliaTestnet()
+        
+        if (!switchResult.success) {
+          setError(switchResult.error || 'Failed to switch network. Please switch to Sepolia testnet manually in MetaMask.')
+          setPaymentStep('select')
+          setStep(3)
+          setCryptoProcessing(false)
+          return
+        }
+        console.log('✅ Switched to Sepolia testnet')
+      }
+
+      const priceInINR = parseFloat(price)
+      // Convert INR to ETH (approximate rate - in production, use an API)
+      // Using a mock rate: 1 ETH = ₹200,000 (adjust as needed)
+      const ethRate = 200000 
+      const priceInETH = (priceInINR / ethRate).toFixed(6)
+      
+      // GeniePay's receiving wallet address
+      const GENIEPAY_WALLET = import.meta.env.VITE_GENIEPAY_WALLET || '0xcee14015f3ec883f3ca0c1e60a52b8894bc1aa4f'
+      
+      console.log('💰 Initiating crypto payment:', {
+        amount: priceInETH,
+        to: GENIEPAY_WALLET,
+        from: currentWalletAddress,
+        network: 'Sepolia Testnet'
+      })
+
+      // Send transaction via MetaMask
+      const tx = await sendTransaction(GENIEPAY_WALLET, priceInETH)
+      
+      console.log('✅ Transaction successful:', tx)
+
+      // Get current network name
+      const currentNetwork = await getCurrentNetwork()
+      const networkName = currentNetwork?.name || 'Sepolia Testnet'
+
+      // Save subscription with blockchain transaction details
+      const isConnected = selectedService && connectionStatus === 'connected'
+      
+      const paymentData = {
+        paymentStatus: 'paid',
+        paymentMethod: 'crypto',
+        paymentDate: new Date().toISOString(),
+        transactionId: tx.transactionHash,
+        blockchainTxnHash: tx.transactionHash,
+        amountInETH: priceInETH,
+        walletAddress: currentWalletAddress,
+        networkName: networkName,
+        platformFee: 0 // No platform fee for crypto payments
+      }
+
+      await addSubscription(
+        serviceName,
+        parseFloat(price),
+        renewalDate,
+        isConnected,
+        paymentData
+      )
+
+      setPaymentStep('success')
+
+      // Show success message briefly, then close
+      setTimeout(() => {
+        // Reset form state
+        setServiceName('')
+        setPrice('')
+        setRenewalDate('')
+        setSelectedService(null)
+        setStep(1)
+        setConnectionStatus(null)
+        setPaymentStep('select')
+        setPaymentData(null)
+        setPaymentChoice('razorpay')
+        setError('')
+
+        onSuccess()
+      }, 2000)
+
+    } catch (err) {
+      console.error('Crypto payment error:', err)
+      
+      // Parse error message to show user-friendly message
+      let errorMessage = 'Transaction failed. Please try again.'
+      
+      if (err.message) {
+        if (err.message.includes('insufficient funds')) {
+          errorMessage = 'Insufficient funds in your wallet. Please add ETH/MATIC to your MetaMask wallet and try again.'
+        } else if (err.message.includes('User denied') || err.message.includes('user rejected')) {
+          errorMessage = 'Transaction was cancelled by user.'
+        } else if (err.message.includes('network')) {
+          errorMessage = 'Network error. Please check your internet connection.'
+        } else {
+          errorMessage = err.message
+        }
+      }
+      
+      setError(errorMessage)
+      setPaymentStep('select')
+      setStep(3) // Go back to payment method selection
+    } finally {
+      setCryptoProcessing(false)
       setLoading(false)
     }
   }
@@ -1133,30 +1324,83 @@ export default function EnhancedAddSubscriptionModal({ isOpen, onClose, onSucces
                     )}
                   </div>
 
-                  <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mt-4 sm:mt-6">
+                  {/* Payment Method Selection */}
+                  <div className="mt-4 sm:mt-6">
+                    <h4 className="text-sm font-medium mb-3 text-gray-300">Choose Payment Method</h4>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Razorpay Option */}
+                      <button
+                        type="button"
+                        onClick={() => handleConfigureContinue('razorpay')}
+                        disabled={loading}
+                        className="p-4 rounded-lg border-2 border-thor-blue hover:bg-thor-blue/10 transition-all text-left group"
+                      >
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="w-10 h-10 rounded-full bg-thor-blue/20 flex items-center justify-center group-hover:bg-thor-blue/30 transition-colors">
+                            <CreditCard className="w-5 h-5 text-thor-blue" />
+                          </div>
+                          <div>
+                            <div className="font-semibold text-sm flex items-center gap-2">
+                              Pay via Razorpay
+                            </div>
+                            <p className="text-xs text-gray-400">UPI, Cards, Net Banking</p>
+                          </div>
+                        </div>
+                        <div className="text-xs text-gray-500 mt-2">
+                          <span className="text-thor-blue font-medium">₹{(parseFloat(price || 0) * 1.02).toFixed(2)}</span>
+                          <span className="ml-1">(incl. 2% fee)</span>
+                        </div>
+                      </button>
+
+                      {/* Crypto Option */}
+                      <button
+                        type="button"
+                        onClick={() => handleConfigureContinue('crypto')}
+                        disabled={loading}
+                        className="p-4 rounded-lg border-2 border-purple-500 hover:bg-purple-500/10 transition-all text-left group"
+                      >
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center group-hover:bg-purple-500/30 transition-colors">
+                            <Wallet className="w-5 h-5 text-purple-400" />
+                          </div>
+                          <div>
+                            <div className="font-semibold text-sm flex items-center gap-2">
+                              Pay with Crypto
+                              <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded">0% Fee</span>
+                            </div>
+                            <p className="text-xs text-gray-400">ETH / MATIC via MetaMask</p>
+                          </div>
+                        </div>
+                        <div className="text-xs text-gray-500 mt-2">
+                          <span className="text-purple-400 font-medium">~{(parseFloat(price || 0) / 200000).toFixed(6)} ETH</span>
+                          <span className="ml-1">(No platform fee)</span>
+                        </div>
+                      </button>
+                    </div>
+
+                    {/* Skip Payment Option */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaymentChoice('skip')
+                        handleSkipPayment()
+                      }}
+                      disabled={loading}
+                      className="w-full mt-3 p-3 rounded-lg border border-gray-700 hover:border-gray-600 transition-all text-center text-sm text-gray-400 hover:text-gray-300"
+                    >
+                      Skip Payment (Track manually)
+                    </button>
+                  </div>
+
+                  {/* Back Button */}
+                  <div className="flex mt-4">
                     <button
                       type="button"
                       onClick={() => setStep(step - 1)}
                       className="px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-600 hover:border-thor-blue/50 rounded-lg transition-colors"
                     >
                       Back
-                    </button>
-                    
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="flex-1 thor-button disabled:opacity-50 flex items-center justify-center gap-2 text-sm sm:text-base py-2.5 sm:py-3"
-                    >
-                      {loading ? (
-                        <>
-                          <Loader className="w-4 h-4 animate-spin" />
-                          Processing...
-                        </>
-                      ) : (
-                        <>
-                          Continue to Payment
-                        </>
-                      )}
                     </button>
                   </div>
                 </form>
@@ -1202,12 +1446,21 @@ export default function EnhancedAddSubscriptionModal({ isOpen, onClose, onSucces
 
                       {/* Payment Method Selection */}
                       <div className="space-y-3">
-                        <h4 className="font-semibold mb-3">Payment via Razorpay</h4>
+                        <h4 className="font-semibold mb-3">Select Payment Method</h4>
                         
                         {/* Razorpay Payment Option */}
-                        <div className="w-full p-4 rounded-lg border-2 border-thor-blue bg-thor-blue/10">
+                        <button
+                          onClick={() => setPaymentChoice('razorpay')}
+                          className={`w-full p-4 rounded-lg border-2 transition-all text-left ${
+                            paymentChoice === 'razorpay'
+                              ? 'border-thor-blue bg-thor-blue/10'
+                              : 'border-gray-700 hover:border-gray-600'
+                          }`}
+                        >
                           <div className="flex items-center gap-3 mb-3">
-                            <div className="w-12 h-12 rounded-full flex items-center justify-center bg-thor-blue/20">
+                            <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                              paymentChoice === 'razorpay' ? 'bg-thor-blue/30' : 'bg-thor-blue/20'
+                            }`}>
                               <CreditCard className="w-6 h-6 text-thor-blue" />
                             </div>
                             <div className="flex-1">
@@ -1217,31 +1470,101 @@ export default function EnhancedAddSubscriptionModal({ isOpen, onClose, onSucces
                               </div>
                               <p className="text-sm text-gray-400">UPI, Cards, Net Banking & Wallets</p>
                             </div>
+                            {paymentChoice === 'razorpay' && <Check className="w-5 h-5 text-thor-blue" />}
                           </div>
                           
-                          {/* Fee Breakdown */}
-                          <div className="bg-thor-dark/50 rounded-lg p-3 space-y-2 text-sm">
-                            <div className="flex justify-between">
-                              <span className="text-gray-400">Subscription Price:</span>
-                              <span className="font-semibold">{formatAmount(parseFloat(price))}</span>
+                          {paymentChoice === 'razorpay' && (
+                            <div className="bg-thor-dark/50 rounded-lg p-3 space-y-2 text-sm">
+                              <div className="flex justify-between">
+                                <span className="text-gray-400">Subscription Price:</span>
+                                <span className="font-semibold">{formatAmount(parseFloat(price))}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-400">Platform Fee (2%):</span>
+                                <span className="font-semibold text-thor-blue">
+                                  + {formatAmount(parseFloat(price) * 0.02)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center pt-2 border-t border-gray-700">
+                                <span className="font-bold">Total Amount:</span>
+                                <span className="text-lg font-bold text-thor-red">
+                                  {formatAmount(parseFloat(price) * 1.02)}
+                                </span>
+                              </div>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-400">Platform Fee (2%):</span>
-                              <span className="font-semibold text-thor-blue">
-                                + {formatAmount(parseFloat(price) * 0.02)}
-                              </span>
+                          )}
+                        </button>
+
+                        {/* Crypto Payment Option */}
+                        <button
+                          onClick={() => setPaymentChoice('crypto')}
+                          className={`w-full p-4 rounded-lg border-2 transition-all text-left ${
+                            paymentChoice === 'crypto'
+                              ? 'border-purple-500 bg-purple-500/10'
+                              : 'border-gray-700 hover:border-gray-600'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                              paymentChoice === 'crypto' ? 'bg-purple-500/30' : 'bg-purple-500/20'
+                            }`}>
+                              <Wallet className="w-6 h-6 text-purple-400" />
                             </div>
-                            <div className="flex justify-between items-center pt-2 border-t border-gray-700">
-                              <span className="font-bold">Total Amount:</span>
-                              <span className="text-lg font-bold text-thor-red">
-                                {formatAmount(parseFloat(price) * 1.02)}
-                              </span>
+                            <div className="flex-1">
+                              <div className="font-semibold mb-1 flex items-center gap-2">
+                                Pay with Crypto
+                                <span className="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded">Web3</span>
+                              </div>
+                              <p className="text-sm text-gray-400">ETH, MATIC via MetaMask</p>
                             </div>
-                            <p className="text-xs text-gray-500 mt-2">
-                              💳 Platform fee is for automatic payment verification
-                            </p>
+                            {paymentChoice === 'crypto' && <Check className="w-5 h-5 text-purple-400" />}
                           </div>
-                        </div>
+                          
+                          {paymentChoice === 'crypto' && (
+                            <div className="bg-thor-dark/50 rounded-lg p-3 space-y-2 text-sm">
+                              {walletConnected ? (
+                                <>
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-gray-400">Wallet Connected:</span>
+                                    <span className="font-mono text-xs text-green-400">
+                                      {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+                                    </span>
+                                  </div>
+                                  {walletBalance && (
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-400">Balance:</span>
+                                      <span className="font-semibold">{walletBalance} ETH</span>
+                                    </div>
+                                  )}
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-400">Amount (approx):</span>
+                                    <span className="font-semibold text-purple-400">
+                                      ~{(parseFloat(price) / 200000).toFixed(6)} ETH
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-gray-500 mt-2">
+                                    🔗 Zero platform fee for crypto payments!
+                                  </p>
+                                </>
+                              ) : (
+                                <div className="text-center py-2">
+                                  <p className="text-gray-400 text-sm mb-2">Connect your wallet to pay with crypto</p>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleConnectCryptoWallet()
+                                    }}
+                                    className="px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/50 rounded-lg text-purple-400 text-sm flex items-center gap-2 mx-auto transition-colors"
+                                  >
+                                    <Wallet className="w-4 h-4" />
+                                    Connect MetaMask
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </button>
 
                         {/* Skip Payment Option */}
                         <button
@@ -1277,11 +1600,19 @@ export default function EnhancedAddSubscriptionModal({ isOpen, onClose, onSucces
                         </button>
                         
                         <button
-                          onClick={paymentChoice === 'skip' ? () => handlePaymentConfirm(false) : handleRazorpayPayment}
-                          disabled={loading}
+                          onClick={() => {
+                            if (paymentChoice === 'skip') {
+                              handleSkipPayment()
+                            } else if (paymentChoice === 'crypto') {
+                              handleCryptoPayment()
+                            } else {
+                              handleRazorpayPayment()
+                            }
+                          }}
+                          disabled={loading || cryptoProcessing || (paymentChoice === 'crypto' && !walletConnected)}
                           className="flex-1 thor-button flex items-center justify-center gap-2 disabled:opacity-50"
                         >
-                          {loading ? (
+                          {loading || cryptoProcessing ? (
                             <>
                               <Loader className="w-5 h-5 animate-spin" />
                               Processing...
@@ -1289,6 +1620,11 @@ export default function EnhancedAddSubscriptionModal({ isOpen, onClose, onSucces
                           ) : paymentChoice === 'skip' ? (
                             <>
                               Continue without Payment
+                            </>
+                          ) : paymentChoice === 'crypto' ? (
+                            <>
+                              <Wallet className="w-5 h-5" />
+                              {walletConnected ? `Pay ~${(parseFloat(price) / 200000).toFixed(6)} ETH` : 'Connect Wallet First'}
                             </>
                           ) : (
                             <>
@@ -1304,16 +1640,39 @@ export default function EnhancedAddSubscriptionModal({ isOpen, onClose, onSucces
                   {paymentStep === 'processing' && (
                     <div className="text-center py-12">
                       <div className="mb-6">
-                        <div className="w-20 h-20 mx-auto rounded-full bg-thor-blue/20 flex items-center justify-center animate-pulse">
-                          <Smartphone className="w-10 h-10 text-thor-blue" />
+                        <div className={`w-20 h-20 mx-auto rounded-full flex items-center justify-center animate-pulse ${
+                          paymentChoice === 'crypto' ? 'bg-purple-500/20' : 'bg-thor-blue/20'
+                        }`}>
+                          {paymentChoice === 'crypto' ? (
+                            <Wallet className="w-10 h-10 text-purple-400" />
+                          ) : (
+                            <Smartphone className="w-10 h-10 text-thor-blue" />
+                          )}
                         </div>
                       </div>
-                      <h3 className="text-xl font-bold mb-2">Opening UPI Payment</h3>
-                      <p className="text-gray-400 mb-4">Complete payment in your UPI app</p>
+                      <h3 className="text-xl font-bold mb-2">
+                        {paymentChoice === 'crypto' ? 'Confirm in MetaMask' : 'Opening UPI Payment'}
+                      </h3>
+                      <p className="text-gray-400 mb-4">
+                        {paymentChoice === 'crypto' 
+                          ? 'Please confirm the transaction in your MetaMask wallet' 
+                          : 'Complete payment in your UPI app'}
+                      </p>
                       <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
                         <Loader className="w-4 h-4 animate-spin" />
-                        <span>Redirecting to UPI apps...</span>
+                        <span>
+                          {paymentChoice === 'crypto' 
+                            ? 'Waiting for blockchain confirmation...' 
+                            : 'Redirecting to UPI apps...'}
+                        </span>
                       </div>
+                      {paymentChoice === 'crypto' && (
+                        <div className="mt-6 bg-purple-500/10 border border-purple-500/30 rounded-lg p-4 max-w-sm mx-auto">
+                          <p className="text-xs text-gray-400">
+                            💡 Check your MetaMask extension for the transaction popup. Confirm to complete payment.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1468,7 +1827,11 @@ export default function EnhancedAddSubscriptionModal({ isOpen, onClose, onSucces
                       <p className="text-gray-400 mb-4">Your subscription has been activated</p>
                       <div className="bg-thor-dark/50 rounded-lg p-4 mb-4 inline-block">
                         <p className="text-sm text-gray-400">Subscription: <span className="text-white font-semibold">{serviceName}</span></p>
-                        <p className="text-sm text-gray-400">Amount Paid: <span className="text-thor-blue font-semibold">{formatAmount(parseFloat(price) * 1.02)}</span></p>
+                        <p className="text-sm text-gray-400">Amount Paid: <span className="text-thor-blue font-semibold">
+                          {paymentChoice === 'crypto' 
+                            ? `~${(parseFloat(price) / 200000).toFixed(6)} ETH` 
+                            : formatAmount(parseFloat(price) * 1.02)}
+                        </span></p>
                       </div>
                       <p className="text-sm text-gray-500">Redirecting to dashboard...</p>
                     </div>
@@ -1477,6 +1840,91 @@ export default function EnhancedAddSubscriptionModal({ isOpen, onClose, onSucces
               )}
             </div>
           </motion.div>
+
+          {/* MetaMask Not Installed Modal */}
+          <AnimatePresence>
+            {showMetaMaskPrompt && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4"
+                onClick={() => setShowMetaMaskPrompt(false)}
+              >
+                <motion.div
+                  initial={{ scale: 0.9, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.9, opacity: 0 }}
+                  className="bg-thor-darker border border-purple-500/30 rounded-2xl p-6 max-w-md w-full shadow-2xl relative"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Close Button */}
+                  <button
+                    onClick={() => setShowMetaMaskPrompt(false)}
+                    className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+
+                  {/* MetaMask Logo */}
+                  <div className="flex justify-center mb-6">
+                    <div className="w-20 h-20 bg-gradient-to-br from-orange-400 to-orange-600 rounded-2xl flex items-center justify-center">
+                      <Wallet className="w-10 h-10 text-white" />
+                    </div>
+                  </div>
+
+                  {/* Title */}
+                  <h3 className="text-2xl font-bold text-center mb-2">
+                    MetaMask Required
+                  </h3>
+
+                  {/* Description */}
+                  <p className="text-gray-400 text-center mb-6">
+                    To pay with cryptocurrency, you need to install the MetaMask browser extension.
+                  </p>
+
+                  {/* Features */}
+                  <div className="bg-thor-dark/50 rounded-lg p-4 mb-6 space-y-2">
+                    <div className="flex items-center gap-2 text-sm text-gray-300">
+                      <Shield className="w-4 h-4 text-green-500" />
+                      <span>Secure & decentralized payments</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-300">
+                      <Zap className="w-4 h-4 text-purple-500" />
+                      <span>Zero platform fee for crypto</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-300">
+                      <Wallet className="w-4 h-4 text-thor-blue" />
+                      <span>Pay with ETH or MATIC</span>
+                    </div>
+                  </div>
+
+                  {/* Download Button */}
+                  <a
+                    href={METAMASK_DOWNLOAD_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full thor-button py-3 flex items-center justify-center gap-2 mb-3"
+                  >
+                    <Download className="w-5 h-5" />
+                    <span>Download MetaMask</span>
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+
+                  {/* Use Razorpay Instead */}
+                  <button
+                    onClick={() => {
+                      setShowMetaMaskPrompt(false)
+                      setPaymentChoice('razorpay')
+                    }}
+                    className="w-full text-gray-400 hover:text-white transition-colors text-sm py-2"
+                  >
+                    Use Razorpay instead
+                  </button>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </>
       )}
     </AnimatePresence>

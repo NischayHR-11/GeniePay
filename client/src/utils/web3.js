@@ -32,10 +32,17 @@ const CONTRACT_ABI = [
   }
 ]
 
+export const METAMASK_DOWNLOAD_URL = 'https://metamask.io/download/'
+
 export const connectWallet = async () => {
   try {
     if (typeof window.ethereum === 'undefined') {
-      throw new Error('MetaMask is not installed')
+      return {
+        success: false,
+        error: 'MetaMask is not installed',
+        errorCode: 'METAMASK_NOT_INSTALLED',
+        downloadUrl: METAMASK_DOWNLOAD_URL
+      }
     }
 
     // Request account access
@@ -90,6 +97,45 @@ export const disconnectWallet = () => {
   contract = null
 }
 
+export const switchToSepoliaTestnet = async () => {
+  try {
+    await window.ethereum.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: '0xaa36a7' }], // Sepolia chainId (11155111 in hex)
+    })
+    return { success: true }
+  } catch (switchError) {
+    // Chain hasn't been added to MetaMask
+    if (switchError.code === 4902) {
+      try {
+        await window.ethereum.request({
+          method: 'wallet_addEthereumChain',
+          params: [
+            {
+              chainId: '0xaa36a7',
+              chainName: 'Sepolia Testnet',
+              nativeCurrency: {
+                name: 'SepoliaETH',
+                symbol: 'ETH',
+                decimals: 18,
+              },
+              rpcUrls: ['https://sepolia.infura.io/v3/'],
+              blockExplorerUrls: ['https://sepolia.etherscan.io/'],
+            },
+          ],
+        })
+        return { success: true }
+      } catch (addError) {
+        return { success: false, error: 'Failed to add Sepolia network' }
+      }
+    } else if (switchError.code === 4001) {
+      return { success: false, error: 'User rejected network switch' }
+    } else {
+      return { success: false, error: 'Failed to switch to Sepolia network' }
+    }
+  }
+}
+
 export const switchToMumbaiTestnet = async () => {
   try {
     await window.ethereum.request({
@@ -125,6 +171,21 @@ export const switchToMumbaiTestnet = async () => {
   }
 }
 
+export const getCurrentNetwork = async () => {
+  if (!window.ethereum) return null
+  const chainId = await window.ethereum.request({ method: 'eth_chainId' })
+  const networks = {
+    '0x1': { name: 'Ethereum Mainnet', symbol: 'ETH', isTestnet: false },
+    '0x5': { name: 'Goerli Testnet', symbol: 'ETH', isTestnet: true },
+    '0xaa36a7': { name: 'Sepolia Testnet', symbol: 'ETH', isTestnet: true },
+    '0x89': { name: 'Polygon Mainnet', symbol: 'MATIC', isTestnet: false },
+    '0x13881': { name: 'Mumbai Testnet', symbol: 'MATIC', isTestnet: true },
+    '0x38': { name: 'BNB Smart Chain', symbol: 'BNB', isTestnet: false },
+    '0xa86a': { name: 'Avalanche C-Chain', symbol: 'AVAX', isTestnet: false },
+  }
+  return { chainId, ...networks[chainId] } || { chainId, name: `Chain ID: ${parseInt(chainId, 16)}`, symbol: 'ETH', isTestnet: false }
+}
+
 export const getBalance = async (address) => {
   if (!web3) {
     throw new Error('Web3 not initialized')
@@ -139,11 +200,24 @@ export const sendTransaction = async (to, amount) => {
     throw new Error('Wallet not connected')
   }
 
+  // Validate and checksum the recipient address
+  if (!web3.utils.isAddress(to)) {
+    throw new Error('Invalid recipient address')
+  }
+  
+  const checksumAddress = web3.utils.toChecksumAddress(to)
   const amountWei = web3.utils.toWei(amount.toString(), 'ether')
+
+  console.log('📤 Sending transaction:', {
+    from: account,
+    to: checksumAddress,
+    value: amountWei,
+    amountETH: amount
+  })
 
   const tx = await web3.eth.sendTransaction({
     from: account,
-    to,
+    to: checksumAddress,
     value: amountWei,
   })
 

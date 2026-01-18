@@ -39,7 +39,7 @@ const subscriptionSchema = new mongoose.Schema({
   },
   paymentMethod: {
     type: String,
-    enum: ['razorpay', 'upi', 'card', 'netbanking', 'wallet', 'blockchain', 'manual'],
+    enum: ['razorpay', 'upi', 'card', 'netbanking', 'wallet', 'blockchain', 'crypto', 'manual'],
     default: 'manual'
   },
   paymentDate: {
@@ -56,6 +56,19 @@ const subscriptionSchema = new mongoose.Schema({
   },
   totalPaid: {
     type: Number,
+    default: null
+  },
+  // Crypto-specific fields
+  walletAddress: {
+    type: String,
+    default: null
+  },
+  amountInETH: {
+    type: String,
+    default: null
+  },
+  networkName: {
+    type: String,
     default: null
   },
   createdAt: {

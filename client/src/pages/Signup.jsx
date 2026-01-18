@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Link, useNavigate } from 'react-router-dom'
-import { Zap, Mail, Lock, User, Wallet, Loader, Shield, Phone } from 'lucide-react'
+import { Zap, Mail, Lock, User, Wallet, Loader, Shield, Phone, X, ExternalLink, Download } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import { connectWallet } from '../utils/web3'
+import { connectWallet, METAMASK_DOWNLOAD_URL } from '../utils/web3'
 import SimpleBackground from '../components/SimpleBackground'
 
 export default function Signup() {
@@ -16,6 +16,7 @@ export default function Signup() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState(1) // 1: Signup form, 2: OTP verification
+  const [showMetaMaskModal, setShowMetaMaskModal] = useState(false)
   
   const { signup, verifyOTP } = useAuth()
   const navigate = useNavigate()
@@ -24,6 +25,9 @@ export default function Signup() {
     const result = await connectWallet()
     if (result.success) {
       setWalletAddress(result.address)
+      setError('')
+    } else if (result.errorCode === 'METAMASK_NOT_INSTALLED') {
+      setShowMetaMaskModal(true)
     } else {
       setError(result.error)
     }
@@ -348,6 +352,88 @@ export default function Signup() {
           </div>
         </div>
       </motion.div>
+
+      {/* MetaMask Not Installed Modal */}
+      <AnimatePresence>
+        {showMetaMaskModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+            onClick={() => setShowMetaMaskModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-thor-darker border border-thor-blue/30 rounded-2xl p-6 max-w-md w-full shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Close Button */}
+              <button
+                onClick={() => setShowMetaMaskModal(false)}
+                className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+
+              {/* MetaMask Logo */}
+              <div className="flex justify-center mb-6">
+                <div className="w-20 h-20 bg-gradient-to-br from-orange-400 to-orange-600 rounded-2xl flex items-center justify-center">
+                  <Wallet className="w-10 h-10 text-white" />
+                </div>
+              </div>
+
+              {/* Title */}
+              <h3 className="text-2xl font-bold text-center mb-2">
+                MetaMask Not Detected
+              </h3>
+
+              {/* Description */}
+              <p className="text-gray-400 text-center mb-6">
+                To connect your wallet and enable blockchain features, you need to install the MetaMask browser extension.
+              </p>
+
+              {/* Features List */}
+              <div className="bg-thor-dark/50 rounded-lg p-4 mb-6 space-y-2">
+                <div className="flex items-center gap-2 text-sm text-gray-300">
+                  <Shield className="w-4 h-4 text-green-500" />
+                  <span>Secure wallet management</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-gray-300">
+                  <Zap className="w-4 h-4 text-thor-blue" />
+                  <span>Pay subscriptions with crypto</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-gray-300">
+                  <Wallet className="w-4 h-4 text-purple-500" />
+                  <span>Connect to blockchain networks</span>
+                </div>
+              </div>
+
+              {/* Download Button */}
+              <a
+                href={METAMASK_DOWNLOAD_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full thor-button py-3 flex items-center justify-center gap-2 mb-3"
+              >
+                <Download className="w-5 h-5" />
+                <span>Download MetaMask</span>
+                <ExternalLink className="w-4 h-4" />
+              </a>
+
+              {/* Skip Button */}
+              <button
+                onClick={() => setShowMetaMaskModal(false)}
+                className="w-full text-gray-400 hover:text-white transition-colors text-sm py-2"
+              >
+                Skip for now (wallet is optional)
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

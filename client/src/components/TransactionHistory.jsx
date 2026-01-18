@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Receipt, CheckCircle, XCircle, Clock, Download, Filter, Search } from 'lucide-react'
+import { X, Receipt, CheckCircle, XCircle, Clock, Download, Filter, Search, Wallet, ExternalLink, CreditCard } from 'lucide-react'
 import { getTransactions } from '../utils/api'
 
 export default function TransactionHistory({ isOpen, onClose }) {
@@ -29,7 +29,9 @@ export default function TransactionHistory({ isOpen, onClose }) {
   }
 
   const filteredTransactions = transactions.filter(txn => {
-    const matchesFilter = filter === 'all' || txn.paymentStatus === filter
+    const matchesFilter = filter === 'all' || 
+      txn.paymentStatus === filter || 
+      (filter === 'crypto' && txn.paymentMethod === 'crypto')
     const matchesSearch = txn.serviceName.toLowerCase().includes(searchTerm.toLowerCase())
     return matchesFilter && matchesSearch
   })
@@ -201,6 +203,17 @@ export default function TransactionHistory({ isOpen, onClose }) {
                     Failed
                   </button>
                   <button
+                    onClick={() => setFilter('crypto')}
+                    className={`px-3 py-1 rounded-full text-xs transition-colors flex items-center gap-1 ${
+                      filter === 'crypto'
+                        ? 'bg-purple-500 text-white'
+                        : 'bg-thor-dark text-gray-400 hover:bg-thor-dark/50'
+                    }`}
+                  >
+                    <Wallet className="w-3 h-3" />
+                    Crypto
+                  </button>
+                  <button
                     onClick={downloadTransactions}
                     className="ml-auto px-3 py-1 rounded-full text-xs bg-thor-blue/20 text-thor-blue hover:bg-thor-blue/30 transition-colors flex items-center gap-1"
                   >
@@ -232,20 +245,48 @@ export default function TransactionHistory({ isOpen, onClose }) {
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: index * 0.05 }}
-                      className="bg-thor-dark/50 border border-gray-700 rounded-lg p-4 hover:border-thor-blue/50 transition-colors"
+                      className={`bg-thor-dark/50 border rounded-lg p-4 hover:border-thor-blue/50 transition-colors ${
+                        txn.paymentMethod === 'crypto' 
+                          ? 'border-purple-500/50' 
+                          : 'border-gray-700'
+                      }`}
                     >
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex items-center gap-3">
-                          {getStatusIcon(txn.paymentStatus)}
+                          {txn.paymentMethod === 'crypto' ? (
+                            <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center">
+                              <Wallet className="w-4 h-4 text-purple-400" />
+                            </div>
+                          ) : (
+                            getStatusIcon(txn.paymentStatus)
+                          )}
                           <div>
-                            <h3 className="font-semibold text-sm">{txn.serviceName}</h3>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-semibold text-sm">{txn.serviceName}</h3>
+                              {txn.paymentMethod === 'crypto' && (
+                                <span className="text-[10px] bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded">
+                                  CRYPTO
+                                </span>
+                              )}
+                            </div>
                             <p className="text-xs text-gray-400">{formatDate(txn.paymentDate)}</p>
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className="font-bold text-thor-red">
-                            {formatAmount(Number(txn.totalPaid) || Number(txn.amount) || 0)}
-                          </p>
+                          {txn.paymentMethod === 'crypto' && txn.amountInETH ? (
+                            <>
+                              <p className="font-bold text-purple-400">
+                                {txn.amountInETH} ETH
+                              </p>
+                              <p className="text-xs text-gray-400">
+                                ≈ {formatAmount(Number(txn.amount) || 0)}
+                              </p>
+                            </>
+                          ) : (
+                            <p className="font-bold text-thor-red">
+                              {formatAmount(Number(txn.totalPaid) || Number(txn.amount) || 0)}
+                            </p>
+                          )}
                           <span className={`text-xs px-2 py-0.5 rounded-full ${
                             txn.paymentStatus === 'paid'
                               ? 'bg-green-500/20 text-green-400'
@@ -263,9 +304,29 @@ export default function TransactionHistory({ isOpen, onClose }) {
                       {/* Transaction Details */}
                       <div className="space-y-1 text-xs text-gray-400 border-t border-gray-700 pt-3">
                         {txn.paymentMethod && (
-                          <div className="flex justify-between">
+                          <div className="flex justify-between items-center">
                             <span>Payment Method:</span>
-                            <span className="text-white capitalize">{txn.paymentMethod}</span>
+                            <span className={`capitalize flex items-center gap-1 ${
+                              txn.paymentMethod === 'crypto' ? 'text-purple-400' : 'text-white'
+                            }`}>
+                              {txn.paymentMethod === 'crypto' && <Wallet className="w-3 h-3" />}
+                              {txn.paymentMethod === 'razorpay' && <CreditCard className="w-3 h-3" />}
+                              {txn.paymentMethod}
+                            </span>
+                          </div>
+                        )}
+                        {txn.paymentMethod === 'crypto' && txn.walletAddress && (
+                          <div className="flex justify-between items-center">
+                            <span>Wallet:</span>
+                            <span className="text-purple-400 font-mono text-[10px]">
+                              {txn.walletAddress.slice(0, 6)}...{txn.walletAddress.slice(-4)}
+                            </span>
+                          </div>
+                        )}
+                        {txn.paymentMethod === 'crypto' && txn.networkName && (
+                          <div className="flex justify-between">
+                            <span>Network:</span>
+                            <span className="text-white">{txn.networkName}</span>
                           </div>
                         )}
                         {txn.platformFee > 0 && (
@@ -274,12 +335,31 @@ export default function TransactionHistory({ isOpen, onClose }) {
                             <span className="text-white">{formatAmount(txn.platformFee)}</span>
                           </div>
                         )}
-                        {txn.transactionId && (
+                        {txn.paymentMethod === 'crypto' && txn.platformFee === 0 && (
                           <div className="flex justify-between">
+                            <span>Platform Fee:</span>
+                            <span className="text-green-400">Free (0%)</span>
+                          </div>
+                        )}
+                        {txn.transactionId && (
+                          <div className="flex justify-between items-center">
                             <span>Transaction ID:</span>
-                            <span className="text-white font-mono text-[10px]">
-                              {txn.transactionId.slice(0, 20)}...
-                            </span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-white font-mono text-[10px]">
+                                {txn.transactionId.slice(0, 16)}...
+                              </span>
+                              {txn.paymentMethod === 'crypto' && txn.blockchainTxnHash && (
+                                <a
+                                  href={`https://sepolia.etherscan.io/tx/${txn.blockchainTxnHash}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-purple-400 hover:text-purple-300"
+                                  title="View on Etherscan"
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              )}
+                            </div>
                           </div>
                         )}
                       </div>

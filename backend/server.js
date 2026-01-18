@@ -853,7 +853,14 @@ app.post('/subscriptions/add',
         paymentStatus,
         paymentMethod,
         paymentDate,
-        transactionId
+        transactionId,
+        // Crypto-specific fields
+        blockchainTxnHash,
+        amountInETH,
+        walletAddress,
+        networkName,
+        platformFee,
+        totalPaid
       } = req.body;
 
       const subscription = new Subscription({
@@ -866,7 +873,14 @@ app.post('/subscriptions/add',
         paymentStatus: paymentStatus || 'manual',
         paymentMethod: paymentMethod || 'manual',
         paymentDate: paymentDate ? new Date(paymentDate) : null,
-        transactionId: transactionId || null
+        transactionId: transactionId || null,
+        // Crypto-specific fields
+        blockchainTxnHash: blockchainTxnHash || null,
+        amountInETH: amountInETH || null,
+        walletAddress: walletAddress || null,
+        networkName: networkName || null,
+        platformFee: platformFee || 0,
+        totalPaid: totalPaid || null
       });
 
       await subscription.save();
@@ -1141,7 +1155,7 @@ app.get('/transactions', authenticateToken, async (req, res) => {
       userId: req.user.id,
       paymentStatus: { $exists: true }
     })
-      .select('serviceName price paymentStatus paymentMethod paymentDate transactionId platformFee totalPaid')
+      .select('serviceName price paymentStatus paymentMethod paymentDate transactionId platformFee totalPaid blockchainTxnHash amountInETH walletAddress networkName')
       .sort({ paymentDate: -1 })
       .lean();
 
@@ -1155,7 +1169,12 @@ app.get('/transactions', authenticateToken, async (req, res) => {
       paymentDate: sub.paymentDate,
       transactionId: sub.transactionId || null,
       platformFee: sub.platformFee || 0,
-      totalPaid: sub.totalPaid || sub.price  // Fallback to price
+      totalPaid: sub.totalPaid || sub.price,  // Fallback to price
+      // Crypto-specific fields
+      blockchainTxnHash: sub.blockchainTxnHash || null,
+      amountInETH: sub.amountInETH || null,
+      walletAddress: sub.walletAddress || null,
+      networkName: sub.networkName || null
     }));
 
     res.json({

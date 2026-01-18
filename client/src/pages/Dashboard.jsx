@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Zap, Plus, Trash2, Pause, Play, LogOut, Wallet, 
-  Bot, Send, TrendingUp, DollarSign, Calendar, Receipt 
+  Bot, Send, TrendingUp, DollarSign, Calendar, Receipt,
+  X, Copy, Check, ExternalLink, Download, Unlink, RefreshCw, Globe
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
@@ -17,7 +18,7 @@ import {
   deleteSubscription,
   pauseSubscription,
 } from '../utils/api'
-import { connectWallet, isWalletConnected } from '../utils/web3'
+import { connectWallet, isWalletConnected, getBalance, disconnectWallet, METAMASK_DOWNLOAD_URL } from '../utils/web3'
 
 export default function Dashboard() {
   const { user, logout } = useAuth()
@@ -31,6 +32,12 @@ export default function Dashboard() {
   const [showTransactions, setShowTransactions] = useState(false)
   const [walletConnected, setWalletConnected] = useState(false)
   const [walletAddress, setWalletAddress] = useState('')
+  const [showWalletModal, setShowWalletModal] = useState(false)
+  const [walletBalance, setWalletBalance] = useState(null)
+  const [networkName, setNetworkName] = useState('')
+  const [copied, setCopied] = useState(false)
+  const [balanceLoading, setBalanceLoading] = useState(false)
+  const [showMetaMaskPrompt, setShowMetaMaskPrompt] = useState(false)
 
   useEffect(() => {
     fetchSubscriptions()
@@ -84,8 +91,60 @@ export default function Dashboard() {
     if (result.success) {
       setWalletConnected(true)
       setWalletAddress(result.address)
+      fetchWalletDetails(result.address)
+    } else if (result.errorCode === 'METAMASK_NOT_INSTALLED') {
+      setShowMetaMaskPrompt(true)
     } else {
       alert(result.error)
+    }
+  }
+
+  const fetchWalletDetails = async (address) => {
+    setBalanceLoading(true)
+    try {
+      const balance = await getBalance(address)
+      setWalletBalance(parseFloat(balance).toFixed(4))
+      
+      // Get network name
+      if (window.ethereum) {
+        const chainId = await window.ethereum.request({ method: 'eth_chainId' })
+        const networks = {
+          '0x1': 'Ethereum Mainnet',
+          '0x5': 'Goerli Testnet',
+          '0xaa36a7': 'Sepolia Testnet',
+          '0x89': 'Polygon Mainnet',
+          '0x13881': 'Mumbai Testnet',
+          '0x38': 'BNB Smart Chain',
+          '0xa86a': 'Avalanche C-Chain',
+        }
+        setNetworkName(networks[chainId] || `Chain ID: ${parseInt(chainId, 16)}`)
+      }
+    } catch (error) {
+      console.error('Error fetching wallet details:', error)
+    } finally {
+      setBalanceLoading(false)
+    }
+  }
+
+  const handleDisconnectWallet = () => {
+    disconnectWallet()
+    setWalletConnected(false)
+    setWalletAddress('')
+    setWalletBalance(null)
+    setNetworkName('')
+    setShowWalletModal(false)
+  }
+
+  const copyAddress = () => {
+    navigator.clipboard.writeText(walletAddress)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const openWalletModal = () => {
+    setShowWalletModal(true)
+    if (walletAddress) {
+      fetchWalletDetails(walletAddress)
     }
   }
 
@@ -115,12 +174,15 @@ export default function Dashboard() {
           <div className="flex items-center gap-2 sm:gap-4">
             {/* Wallet Button */}
             {walletConnected ? (
-              <div className="bg-thor-blue/20 border border-thor-blue rounded-lg px-2 sm:px-4 py-1.5 sm:py-2 flex items-center gap-1 sm:gap-2">
-                <Wallet className="w-4 h-4" />
+              <button
+                onClick={openWalletModal}
+                className="bg-thor-blue/20 border border-thor-blue hover:bg-thor-blue/30 rounded-lg px-2 sm:px-4 py-1.5 sm:py-2 flex items-center gap-1 sm:gap-2 transition-colors cursor-pointer"
+              >
+                <Wallet className="w-4 h-4 text-thor-blue" />
                 <span className="text-xs sm:text-sm hidden sm:inline">
                   {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Connected'}
                 </span>
-              </div>
+              </button>
             ) : (
               <button
                 onClick={handleConnectWallet}
@@ -334,6 +396,192 @@ export default function Dashboard() {
         isOpen={showTransactions}
         onClose={() => setShowTransactions(false)}
       />
+
+      {/* Wallet Details Modal */}
+      <AnimatePresence>
+        {showWalletModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+            onClick={() => setShowWalletModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-thor-darker border border-thor-blue/30 rounded-2xl p-6 max-w-md w-full shadow-2xl relative"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Close Button */}
+              <button
+                onClick={() => setShowWalletModal(false)}
+                className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+
+              {/* Wallet Icon */}
+              <div className="flex justify-center mb-6">
+                <div className="w-16 h-16 bg-gradient-to-br from-thor-blue to-purple-600 rounded-2xl flex items-center justify-center">
+                  <Wallet className="w-8 h-8 text-white" />
+                </div>
+              </div>
+
+              {/* Title */}
+              <h3 className="text-xl font-bold text-center mb-1">Wallet Connected</h3>
+              <p className="text-gray-400 text-center text-sm mb-6">Your MetaMask wallet details</p>
+
+              {/* Wallet Info Cards */}
+              <div className="space-y-4">
+                {/* Address */}
+                <div className="bg-thor-dark/50 rounded-lg p-4">
+                  <p className="text-xs text-gray-400 mb-1">Wallet Address</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-mono truncate">{walletAddress}</p>
+                    <button
+                      onClick={copyAddress}
+                      className="flex-shrink-0 p-2 hover:bg-thor-blue/20 rounded-lg transition-colors"
+                      title="Copy address"
+                    >
+                      {copied ? (
+                        <Check className="w-4 h-4 text-green-500" />
+                      ) : (
+                        <Copy className="w-4 h-4 text-gray-400" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Balance */}
+                <div className="bg-thor-dark/50 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-gray-400 mb-1">Balance</p>
+                      {balanceLoading ? (
+                        <div className="flex items-center gap-2">
+                          <RefreshCw className="w-4 h-4 animate-spin text-thor-blue" />
+                          <span className="text-sm text-gray-400">Loading...</span>
+                        </div>
+                      ) : (
+                        <p className="text-lg font-bold">
+                          {walletBalance !== null ? `${walletBalance} ETH` : 'Unable to fetch'}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => fetchWalletDetails(walletAddress)}
+                      className="p-2 hover:bg-thor-blue/20 rounded-lg transition-colors"
+                      title="Refresh balance"
+                    >
+                      <RefreshCw className={`w-4 h-4 text-gray-400 ${balanceLoading ? 'animate-spin' : ''}`} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Network */}
+                <div className="bg-thor-dark/50 rounded-lg p-4">
+                  <p className="text-xs text-gray-400 mb-1">Network</p>
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-thor-blue" />
+                    <p className="text-sm font-medium">{networkName || 'Unknown Network'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="mt-6 space-y-3">
+                {/* View on Explorer */}
+                <a
+                  href={`https://etherscan.io/address/${walletAddress}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full border border-thor-blue hover:bg-thor-blue/10 rounded-lg px-4 py-3 flex items-center justify-center gap-2 transition-colors"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>View on Explorer</span>
+                </a>
+
+                {/* Disconnect */}
+                <button
+                  onClick={handleDisconnectWallet}
+                  className="w-full border border-red-500/50 hover:bg-red-500/10 text-red-400 rounded-lg px-4 py-3 flex items-center justify-center gap-2 transition-colors"
+                >
+                  <Unlink className="w-4 h-4" />
+                  <span>Disconnect Wallet</span>
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* MetaMask Not Installed Modal */}
+      <AnimatePresence>
+        {showMetaMaskPrompt && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+            onClick={() => setShowMetaMaskPrompt(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-thor-darker border border-thor-blue/30 rounded-2xl p-6 max-w-md w-full shadow-2xl relative"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Close Button */}
+              <button
+                onClick={() => setShowMetaMaskPrompt(false)}
+                className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+
+              {/* MetaMask Logo */}
+              <div className="flex justify-center mb-6">
+                <div className="w-20 h-20 bg-gradient-to-br from-orange-400 to-orange-600 rounded-2xl flex items-center justify-center">
+                  <Wallet className="w-10 h-10 text-white" />
+                </div>
+              </div>
+
+              {/* Title */}
+              <h3 className="text-2xl font-bold text-center mb-2">
+                MetaMask Not Detected
+              </h3>
+
+              {/* Description */}
+              <p className="text-gray-400 text-center mb-6">
+                To connect your wallet and enable blockchain features, you need to install the MetaMask browser extension.
+              </p>
+
+              {/* Download Button */}
+              <a
+                href={METAMASK_DOWNLOAD_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full thor-button py-3 flex items-center justify-center gap-2 mb-3"
+              >
+                <Download className="w-5 h-5" />
+                <span>Download MetaMask</span>
+                <ExternalLink className="w-4 h-4" />
+              </a>
+
+              {/* Skip Button */}
+              <button
+                onClick={() => setShowMetaMaskPrompt(false)}
+                className="w-full text-gray-400 hover:text-white transition-colors text-sm py-2"
+              >
+                Maybe later
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

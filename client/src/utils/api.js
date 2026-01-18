@@ -60,6 +60,16 @@ export const addSubscription = async (serviceName, price, renewalDate, isConnect
     payload.paymentMethod = paymentData.paymentMethod
     payload.paymentDate = paymentData.paymentDate
     payload.transactionId = paymentData.transactionId
+    payload.platformFee = paymentData.platformFee
+    payload.totalPaid = paymentData.totalPaid
+    
+    // Crypto-specific fields
+    if (paymentData.paymentMethod === 'crypto') {
+      payload.blockchainTxnHash = paymentData.blockchainTxnHash
+      payload.amountInETH = paymentData.amountInETH
+      payload.walletAddress = paymentData.walletAddress
+      payload.networkName = paymentData.networkName
+    }
   }
   
   const response = await api.post('/subscriptions/add', payload)
