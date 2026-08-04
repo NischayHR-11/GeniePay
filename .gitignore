@@ -57,3 +57,5 @@ coverage/
 *.pem
 .vercel
 .netlify
+
+docs
